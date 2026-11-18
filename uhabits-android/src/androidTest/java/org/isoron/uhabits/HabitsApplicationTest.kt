@@ -18,17 +18,37 @@
  */
 package org.isoron.uhabits
 
+import androidx.core.content.FileProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.hamcrest.CoreMatchers.containsString
 import org.hamcrest.MatcherAssert.assertThat
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.io.IOException
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class HabitsApplicationTest : BaseAndroidTest() {
+    @Test
+    fun testDebugApplicationIdentity() {
+        assertEquals("org.isoron.uhabits.debug", targetContext.packageName)
+        assertEquals("Loop (Dev)", targetContext.applicationInfo.loadLabel(targetContext.packageManager))
+    }
+
+    @Test
+    fun testFileProviderUsesApplicationIdentity() {
+        val authority = targetContext.packageName
+        val provider = targetContext.packageManager.resolveContentProvider(authority, 0)
+        assertNotNull(provider)
+        assertEquals(authority, provider!!.packageName)
+        val file = File(targetContext.cacheDir, "backup-test.zip")
+        assertEquals(authority, FileProvider.getUriForFile(targetContext, authority, file).authority)
+    }
+
     @Test
     @Throws(IOException::class)
     fun test_getLogcat() {
