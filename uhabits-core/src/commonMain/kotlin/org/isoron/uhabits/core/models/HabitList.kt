@@ -27,6 +27,7 @@ import org.isoron.platform.io.format
 abstract class HabitList : Iterable<Habit> {
     fun getChildren(group: Habit): List<Habit> =
         filter { !it.isGroup && it.parentUuid == group.uuid }
+            .sortedBy { it.name.lowercase() }
 
     fun recomputeGroups() {
         for (group in filter { it.isGroup }) {

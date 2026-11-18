@@ -122,8 +122,8 @@ class HabitCardListController(
     internal inner class NormalMode : Mode {
         override fun onItemClick(position: Int) {
             if (position < 0 || position >= adapter.itemCount) return
-            val id = adapter.habitAt(position)?.id ?: return
-            behavior.onClickHabit(id)
+            val habit = adapter.habitAt(position) ?: return
+            if (habit.isGroup) adapter.toggleGroup(habit.id) else behavior.onClickHabit(habit.id)
         }
 
         override fun onItemLongClick(position: Int): Boolean {

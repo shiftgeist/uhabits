@@ -51,7 +51,8 @@ import org.isoron.uhabits.utils.sres
 data class HabitCardViewState(
     val record: HabitCardState,
     val selected: Boolean,
-    val buttonCount: Int
+    val buttonCount: Int,
+    val collapsed: Boolean = false
 )
 
 class HabitCardView(
@@ -77,7 +78,7 @@ class HabitCardView(
         val r = newState.record
         val c = getActiveColor(r)
         label.apply {
-            text = r.name
+            text = if (r.isGroup) "${if (newState.collapsed) "▸" else "▾"} ${r.name}" else r.name
             setTypeface(null, if (r.isGroup) Typeface.BOLD else Typeface.NORMAL)
             setTextColor(c)
         }

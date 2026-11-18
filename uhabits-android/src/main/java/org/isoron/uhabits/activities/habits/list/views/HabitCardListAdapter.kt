@@ -69,6 +69,21 @@ class HabitCardListAdapter(
 
     private var items: MutableList<HabitCardState> = mutableListOf()
     private var rows: MutableList<Row> = mutableListOf()
+    private val collapsedGroups = mutableSetOf<Long>()
+
+    fun collapsedGroupIds(): LongArray = collapsedGroups.toLongArray()
+
+    fun restoreCollapsedGroups(ids: LongArray) {
+        collapsedGroups.clear()
+        collapsedGroups.addAll(ids.toList())
+        state?.let { setState(it) }
+    }
+
+    fun toggleGroup(id: Long) {
+        if (isDragging || items.none { it.id == id && it.isGroup }) return
+        if (!collapsedGroups.add(id)) collapsedGroups.remove(id)
+        state?.let { setState(it) }
+    }
     private val categoryIds = HashMap<String, Long>()
     private var nextCategoryId = CATEGORY_ID_BASE
 
@@ -101,9 +116,9 @@ class HabitCardListAdapter(
         pendingState = null
         this.state = state
         items = state.items.toMutableList()
-        val visibleIds = state.items.mapTo(mutableSetOf()) { it.id }
-        selected.retainAll(visibleIds)
         rows = buildRows(items).toMutableList()
+        val visibleIds = rows.mapNotNullTo(mutableSetOf()) { (it as? Row.Habit)?.card?.id }
+        selected.retainAll(visibleIds)
         notifyDataSetChanged()
         observable.notifyListeners()
     }
@@ -112,7 +127,10 @@ class HabitCardListAdapter(
         if (habits.isEmpty()) return emptyList()
         val built = mutableListOf<Row>()
         var lastHeader: String? = null
+        var hideChildren = false
         habits.forEach { card ->
+            if (!card.isChild) hideChildren = card.isGroup && card.id in collapsedGroups
+            if (card.isChild && hideChildren) return@forEach
             val cat = card.category
             if (cat.isNotBlank() && cat != lastHeader) {
                 built.add(Row.Category(categoryIdFor(cat), cat))
@@ -196,7 +214,7 @@ class HabitCardListAdapter(
                 val isSelected = selected.contains(row.card.id)
                 listView!!.bindCardView(
                     holder as HabitCardViewHolder,
-                    HabitCardViewState(row.card, isSelected, st.checkmarkCount)
+                    HabitCardViewState(row.card, isSelected, st.checkmarkCount, row.card.id in collapsedGroups)
                 )
             }
             is Row.Category -> {

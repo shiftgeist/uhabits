@@ -147,6 +147,7 @@ class HabitCardListView(
             return
         }
         dataOffset = state.bundle!!.getInt("dataOffset")
+        adapter.restoreCollapsedGroups(state.bundle!!.getLongArray("collapsedGroups") ?: longArrayOf())
         super.onRestoreInstanceState(state.superState)
     }
 
@@ -154,6 +155,7 @@ class HabitCardListView(
         val superState = super.onSaveInstanceState()
         val bundle = Bundle().apply {
             putInt("dataOffset", dataOffset)
+            putLongArray("collapsedGroups", adapter.collapsedGroupIds())
         }
         return BundleSavedState(superState, bundle)
     }

@@ -54,7 +54,9 @@ object ListHabitsPresenter {
         val items = mutableListOf<HabitCardState>()
         val visible = view.toList()
         val groups = visible.filter { it.isGroup }.associateBy { it.uuid }
-        val children = visible.filter { !it.isGroup && it.parentUuid in groups }.groupBy { it.parentUuid }
+        val children = visible.filter { !it.isGroup && it.parentUuid in groups }
+            .sortedBy { it.name.lowercase() }
+            .groupBy { it.parentUuid }
         val ordered = visible.filter { it.isGroup || it.parentUuid !in groups }.flatMap { habit ->
             listOf(habit) + if (habit.isGroup) children[habit.uuid].orEmpty() else emptyList()
         }

@@ -18,6 +18,21 @@ import kotlin.test.assertTrue
 
 class HabitGroupTest : BaseUnitTest() {
     @Test
+    fun testChildrenUseAlphabeticalOrderIgnoringCase() {
+        val group = addHabit("Sport", HabitType.GROUP)
+        val running = addHabit("Running", HabitType.NUMERICAL, group)
+        val yoga = addHabit("yoga", parent = group)
+        val cycling = addHabit("cycling", parent = group)
+        addHabit("Other")
+
+        assertEquals(listOf(cycling, running, yoga), habitList.getChildren(group))
+        assertEquals(
+            listOf(group.id, cycling.id, running.id, yoga.id),
+            state().items.take(4).map { it.id }
+        )
+    }
+
+    @Test
     fun testMixedChildrenCompleteGroupWithAnyActivity() {
         val group = addHabit("Sport", HabitType.GROUP)
         val gym = addHabit("Gym", parent = group)
@@ -61,7 +76,7 @@ class HabitGroupTest : BaseUnitTest() {
         val group = addHabit("Sport", HabitType.GROUP)
         val gym = addHabit("Gym", parent = group)
         running.parentUuid = group.uuid
-        assertEquals(listOf(other.id, group.id, running.id, gym.id), state().items.map { it.id })
+        assertEquals(listOf(other.id, group.id, gym.id, running.id), state().items.map { it.id })
         val childCard = state().items.first { it.id == running.id }
         assertTrue(childCard.isChild)
         assertEquals(listOf(running.id), state(HabitMatcher(searchQuery = "Running")).items.map { it.id })

@@ -36,6 +36,36 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class HabitCardListAdapterTest : BaseAndroidTest() {
+    @Test
+    fun testGroupCollapseHidesOnlyItsChildrenAndSurvivesRefresh() {
+        val adapter = HabitCardListAdapter(habitList, prefs)
+        val group = HabitCardState(
+            id = 1L, name = "Sport", color = PaletteColor(7), unit = "",
+            isNumerical = false, archived = false, score = 0.0,
+            checkmarks = emptyList(), completed = emptyList(), notes = emptyList(),
+            category = "", isGroup = true
+        )
+        val state = ListHabitsState(
+            items = listOf(
+                group,
+                group.copy(id = 2L, name = "Gym", isGroup = false, isChild = true),
+                group.copy(id = 3L, name = "Read", isGroup = false)
+            ),
+            hasHabits = true, primaryOrder = Order.BY_POSITION,
+            secondaryOrder = Order.BY_NAME_ASC, isSortable = true,
+            checkmarkCount = 0, theme = LightTheme()
+        )
+        adapter.setState(state)
+        adapter.toggleGroup(1L)
+        assertThat(adapter.itemCount, equalTo(2))
+        assertThat(adapter.habitAt(1)?.id, equalTo(3L))
+        adapter.setState(state)
+        assertThat(adapter.itemCount, equalTo(2))
+        adapter.toggleGroup(1L)
+        assertThat(adapter.itemCount, equalTo(3))
+        assertThat(adapter.habitAt(1)?.id, equalTo(2L))
+    }
+
 
     @Test
     fun testSetState_buildsRowsWithCategoryHeaders() {
