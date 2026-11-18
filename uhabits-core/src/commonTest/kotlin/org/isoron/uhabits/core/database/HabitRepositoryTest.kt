@@ -10,6 +10,19 @@ import kotlin.test.assertTrue
 
 class HabitRepositoryTest {
     @Test
+    fun testGroupMembershipPersists() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        val repo = HabitRepository(db)
+        val data = HabitData(name = "Running", parentUuid = "sport-uuid")
+        data.id = repo.insert(data)
+        assertEquals("sport-uuid", repo.findAll().single().parentUuid)
+        data.parentUuid = null
+        repo.update(data)
+        assertNull(repo.findAll().single().parentUuid)
+        db.close()
+    }
+
+    @Test
     fun testInsertAndFindAll() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         val repo = HabitRepository(db)

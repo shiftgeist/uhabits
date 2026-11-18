@@ -26,6 +26,7 @@ import kotlin.uuid.Uuid
 @OptIn(ExperimentalUuidApi::class)
 data class Habit(
     var category: String = "",
+    var parentUuid: String? = null,
     var color: PaletteColor = PaletteColor(8),
     var description: String = "",
     var frequency: Frequency = Frequency.DAILY,
@@ -54,6 +55,9 @@ data class Habit(
     val isNumerical: Boolean
         get() = type == HabitType.NUMERICAL
 
+    val isGroup: Boolean
+        get() = type == HabitType.GROUP
+
     val uriString: String
         get() = "content://org.isoron.uhabits/habit/$id"
 
@@ -73,9 +77,9 @@ data class Habit(
         return value != Entry.UNKNOWN
     }
 
-    fun recompute() {
+    fun recompute(entries: EntryList = originalEntries) {
         computedEntries.recomputeFrom(
-            originalEntries = originalEntries,
+            originalEntries = entries,
             frequency = frequency,
             isNumerical = isNumerical
         )
@@ -115,6 +119,7 @@ data class Habit(
 
     fun copyFrom(other: Habit) {
         this.category = other.category
+        this.parentUuid = other.parentUuid
         this.color = other.color
         this.description = other.description
         this.frequency = other.frequency
@@ -136,6 +141,7 @@ data class Habit(
         if (other !is Habit) return false
 
         if (category != other.category) return false
+        if (parentUuid != other.parentUuid) return false
         if (color != other.color) return false
         if (description != other.description) return false
         if (frequency != other.frequency) return false
@@ -156,6 +162,7 @@ data class Habit(
 
     override fun hashCode(): Int {
         var result = category.hashCode()
+        result = 31 * result + (parentUuid?.hashCode() ?: 0)
         result = 31 * result + color.hashCode()
         result = 31 * result + description.hashCode()
         result = 31 * result + frequency.hashCode()

@@ -55,6 +55,11 @@ class HabitTypeDialog : AppCompatDialogFragment() {
             dismiss()
         }
 
+        binding.buttonGroup.setOnClickListener {
+            startActivity(IntentFactory().startEditActivity(requireActivity(), HabitType.GROUP.value))
+            dismiss()
+        }
+
         return binding.root
     }
 }

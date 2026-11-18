@@ -24,6 +24,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.ArrayAdapter
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import me.tatarka.inject.annotations.Inject
 import nl.dionsegijn.konfetti.core.Party
@@ -31,6 +33,7 @@ import nl.dionsegijn.konfetti.core.Position
 import nl.dionsegijn.konfetti.core.emitter.Emitter
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.io.JavaUserFile
+import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.CategoryDialog
 import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
@@ -47,6 +50,7 @@ import org.isoron.uhabits.core.commands.CreateHabitCommand
 import org.isoron.uhabits.core.commands.DeleteHabitsCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.commands.UnarchiveHabitsCommand
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.PaletteColor
@@ -84,6 +88,7 @@ import org.isoron.uhabits.utils.showSendEmailScreen
 import org.isoron.uhabits.utils.showSendFileScreen
 import java.io.File
 import java.io.IOException
+import java.text.NumberFormat
 import java.util.concurrent.TimeUnit
 
 const val RESULT_IMPORT_DATA = 101
@@ -118,6 +123,7 @@ class ListHabitsScreen(
     ListHabitsSelectionMenuBehavior.Screen {
 
     val activity = (context as AppCompatActivity)
+    private var groupEntryDialog: AlertDialog? = null
 
     fun onAttached() {
         commandRunner.addListener(this)
@@ -125,6 +131,7 @@ class ListHabitsScreen(
     }
 
     fun onDetached() {
+        groupEntryDialog?.dismiss()
         commandRunner.removeListener(this)
         midnightTimer.removeListener(this)
     }
@@ -216,6 +223,60 @@ class ListHabitsScreen(
     override fun showHabitScreen(habitId: Long) {
         val intent = intentFactory.startShowHabitActivity(activity, habitId)
         activity.startActivity(intent)
+    }
+
+    override fun showGroupEntryScreen(groupId: Long, date: LocalDate) {
+        val group = allHabits.getById(groupId) ?: return
+        val children = allHabits.getChildren(group).filter { !it.isArchived }
+        val entries = ArrayAdapter<String>(context, android.R.layout.simple_list_item_1)
+        fun updateEntries() {
+            entries.clear()
+            entries.addAll(children.map { child ->
+                val value = child.originalEntries.get(date).value
+                when {
+                    child.isNumerical && value >= 0 && value != Entry.SKIP ->
+                        context.getString(
+                            R.string.group_child_value, child.name,
+                            NumberFormat.getNumberInstance().format(value / 1000.0), child.unit
+                        )
+                    !child.isNumerical && value == Entry.YES_MANUAL ->
+                        context.getString(R.string.group_child_complete, child.name)
+                    else -> context.getString(R.string.group_child_incomplete, child.name)
+                }
+            })
+        }
+        updateEntries()
+        val builder = AlertDialog.Builder(context)
+            .setTitle(context.getString(R.string.group_entry_title, group.name, date.toString()))
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.group_edit) { _, _ -> showEditHabitsScreen(listOf(group)) }
+        if (children.isEmpty()) {
+            builder.setMessage(R.string.group_no_children)
+        } else {
+            builder.setAdapter(entries) { _, _ -> }
+        }
+        groupEntryDialog?.dismiss()
+        val dialog = builder.create()
+        groupEntryDialog = dialog
+        val listener = object : CommandRunner.Listener {
+            override fun onCommandFinished(command: Command) {
+                updateEntries()
+            }
+        }
+        dialog.setOnDismissListener {
+            commandRunner.removeListener(listener)
+            if (groupEntryDialog === dialog) groupEntryDialog = null
+        }
+        commandRunner.addListener(listener)
+        dialog.show()
+        dialog.listView?.setOnItemClickListener { _, _, index, _ ->
+            behavior.value.onEdit(children[index].id!!, date, 0f, 0f)
+        }
+        dialog.listView?.setOnItemLongClickListener { _, _, index, _ ->
+            dialog.dismiss()
+            showHabitScreen(children[index].id!!)
+            true
+        }
     }
 
     fun showImportScreen() {

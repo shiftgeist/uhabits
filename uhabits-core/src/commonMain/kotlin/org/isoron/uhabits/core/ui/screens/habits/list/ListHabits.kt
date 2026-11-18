@@ -44,6 +44,7 @@ object ListHabitsPresenter {
         checkmarkCount: Int,
         theme: Theme
     ): ListHabitsState {
+        allHabits.recomputeGroups()
         val view = allHabits.getFiltered(filter)
         view.primaryOrder = primaryOrder
         view.secondaryOrder = secondaryOrder
@@ -51,7 +52,13 @@ object ListHabitsPresenter {
         val today = getToday()
         val dateFrom = today.minus(checkmarkCount - 1)
         val items = mutableListOf<HabitCardState>()
-        for (habit in view) {
+        val visible = view.toList()
+        val groups = visible.filter { it.isGroup }.associateBy { it.uuid }
+        val children = visible.filter { !it.isGroup && it.parentUuid in groups }.groupBy { it.parentUuid }
+        val ordered = visible.filter { it.isGroup || it.parentUuid !in groups }.flatMap { habit ->
+            listOf(habit) + if (habit.isGroup) children[habit.uuid].orEmpty() else emptyList()
+        }
+        for (habit in ordered) {
             val id = habit.id ?: continue
             val score = habit.scores[today].value
             val entries = habit.computedEntries.getByInterval(dateFrom, today)
@@ -67,7 +74,9 @@ object ListHabitsPresenter {
                     checkmarks = entries.map { it.value },
                     completed = entries.map { it.completed },
                     notes = entries.map { it.notes },
-                    category = habit.category
+                    category = groups[habit.parentUuid]?.category ?: habit.category,
+                    isGroup = habit.isGroup,
+                    isChild = !habit.isGroup && habit.parentUuid in groups
                 )
             )
         }
@@ -94,5 +103,7 @@ data class HabitCardState(
     val checkmarks: List<Int>,
     val completed: List<Boolean>,
     val notes: List<String>,
-    val category: String
+    val category: String,
+    val isGroup: Boolean = false,
+    val isChild: Boolean = false
 )

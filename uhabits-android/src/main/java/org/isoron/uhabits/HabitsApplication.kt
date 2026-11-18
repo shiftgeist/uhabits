@@ -74,6 +74,7 @@ class HabitsApplication : Application() {
 
         val habitList = component.habitList
         for (h in habitList) h.recompute()
+        habitList.recomputeGroups()
 
         widgetUpdater = component.widgetUpdater.apply {
             startListening()

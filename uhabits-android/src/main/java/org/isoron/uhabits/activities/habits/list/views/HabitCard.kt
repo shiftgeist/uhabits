@@ -21,6 +21,7 @@ package org.isoron.uhabits.activities.habits.list.views
 
 import android.content.Context
 import android.graphics.PointF
+import android.graphics.Typeface
 import android.graphics.text.LineBreaker.BREAK_STRATEGY_BALANCED
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
@@ -77,8 +78,10 @@ class HabitCardView(
         val c = getActiveColor(r)
         label.apply {
             text = r.name
+            setTypeface(null, if (r.isGroup) Typeface.BOLD else Typeface.NORMAL)
             setTextColor(c)
         }
+        innerFrame.setPaddingRelative(if (r.isChild) dp(16f).toInt() else 0, 0, 0, 0)
         scoreRing.apply {
             setPercentage(r.score.toFloat())
             setPrecision(1.0f / 16)
@@ -142,6 +145,7 @@ class HabitCardView(
 
         checkmarkPanel = checkmarkPanelFactory.create().apply {
             onToggle = { date, value, notes ->
+                state?.takeIf { it.record.isGroup }?.let { setState(it) }
                 triggerRipple(date)
                 val location = getAbsoluteButtonLocation(date)
                 state?.record?.id?.let { habitId ->

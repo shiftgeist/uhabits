@@ -44,6 +44,7 @@ import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateHabitCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
+import org.isoron.uhabits.core.commands.SaveHabitGroupCommand
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
@@ -86,6 +87,7 @@ class EditHabitActivity : AppCompatActivity() {
     var reminderMin = -1
     var reminderDays: WeekdayList = WeekdayList.EVERY_DAY
     var targetType = NumericalHabitType.AT_LEAST
+    private val childIds = mutableSetOf<Long>()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -109,6 +111,7 @@ class EditHabitActivity : AppCompatActivity() {
             freqNum = habit.frequency.numerator
             freqDen = habit.frequency.denominator
             targetType = habit.targetType
+            childIds.addAll(component.habitList.getChildren(habit).mapNotNull { it.id })
             habit.reminder?.let {
                 reminderHour = it.hour
                 reminderMin = it.minute
@@ -133,12 +136,14 @@ class EditHabitActivity : AppCompatActivity() {
             reminderHour = state.getInt("reminderHour")
             reminderMin = state.getInt("reminderMin")
             reminderDays = WeekdayList(state.getInt("reminderDays"))
+            childIds.clear()
+            childIds.addAll(state.getLongArray("childIds")?.toList().orEmpty())
         }
 
         updateColors()
 
         when (habitType) {
-            HabitType.YES_NO -> {
+            HabitType.YES_NO, HabitType.GROUP -> {
                 binding.unitOuterBox.visibility = View.GONE
                 binding.targetOuterBox.visibility = View.GONE
                 binding.targetTypeOuterBox.visibility = View.GONE
@@ -147,6 +152,40 @@ class EditHabitActivity : AppCompatActivity() {
                 binding.nameInput.hint = getString(R.string.measurable_short_example)
                 binding.questionInput.hint = getString(R.string.measurable_question_example)
                 binding.frequencyOuterBox.visibility = View.GONE
+            }
+        }
+
+        if (habitType == HabitType.GROUP) {
+            freqNum = 1
+            freqDen = 1
+            binding.frequencyOuterBox.visibility = View.GONE
+            binding.reminderOuterBox.visibility = View.GONE
+            binding.childrenOuterBox.visibility = View.VISIBLE
+            populateChildren()
+            binding.childrenPicker.setOnClickListener {
+                val candidates = component.habitList.filter { !it.isGroup }
+                if (candidates.isEmpty()) {
+                    AlertDialog.Builder(this)
+                        .setMessage(R.string.group_no_children)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                } else {
+                    val checked = BooleanArray(candidates.size) { candidates[it].id in childIds }
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.child_habits)
+                        .setMultiChoiceItems(candidates.map { it.name }.toTypedArray(), checked) { _, index, value ->
+                            checked[index] = value
+                        }
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            childIds.clear()
+                            candidates.forEachIndexed { index, child ->
+                                if (checked[index]) childIds.add(child.id!!)
+                            }
+                            populateChildren()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
             }
         }
 
@@ -276,7 +315,7 @@ class EditHabitActivity : AppCompatActivity() {
         habit.description = binding.notesInput.text.trim().toString()
         habit.category = binding.categoryInput.text.trim().toString()
         habit.color = color
-        if (reminderHour >= 0) {
+        if (reminderHour >= 0 && habitType != HabitType.GROUP) {
             habit.reminder = Reminder(reminderHour, reminderMin, reminderDays)
         } else {
             habit.reminder = null
@@ -303,7 +342,13 @@ class EditHabitActivity : AppCompatActivity() {
                 habit
             )
         }
-        component.commandRunner.run(command)
+        component.commandRunner.run(
+            if (habitType == HabitType.GROUP) {
+                SaveHabitGroupCommand(command, component.habitList, habit.uuid!!, childIds.toSet())
+            } else {
+                command
+            }
+        )
         finish()
     }
 
@@ -333,6 +378,16 @@ class EditHabitActivity : AppCompatActivity() {
             binding.reminderDatePicker.visibility = View.VISIBLE
             binding.reminderDivider.visibility = View.VISIBLE
             binding.reminderDatePicker.text = reminderDays.toFormattedString(this)
+        }
+    }
+
+    private fun populateChildren() {
+        val habits = (application as HabitsApplication).component.habitList
+        val names = childIds.mapNotNull { habits.getById(it)?.name }
+        binding.childrenPicker.text = if (names.isEmpty()) {
+            getString(R.string.select_child_habits)
+        } else {
+            names.joinToString(", ")
         }
     }
 
@@ -380,6 +435,7 @@ class EditHabitActivity : AppCompatActivity() {
             putInt("reminderHour", reminderHour)
             putInt("reminderMin", reminderMin)
             putInt("reminderDays", reminderDays.toInteger())
+            putLongArray("childIds", childIds.toLongArray())
         }
     }
 }

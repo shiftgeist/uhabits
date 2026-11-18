@@ -66,6 +66,7 @@ open class HabitPickerDialog : Activity() {
         val habitIds = ArrayList<Long>()
         val habitNames = ArrayList<String>()
         for (h in habitList) {
+            if (h.isGroup) continue
             if (h.isArchived) continue
             if (h.isNumerical and shouldHideNumerical()) continue
             if (!h.isNumerical and shouldHideBoolean()) continue

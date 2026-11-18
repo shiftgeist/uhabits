@@ -114,6 +114,7 @@ class LoopDBImporter(
             }
             habit.recompute()
         }
+        habitList.recomputeGroups()
         habitList.resort()
         db.close()
     }
@@ -123,7 +124,7 @@ class LoopDBImporter(
         db.query(
             "SELECT id, name, description, question, freq_num, freq_den, color, " +
                 "position, reminder_hour, reminder_min, reminder_days, highlight, " +
-                "archived, type, target_value, target_type, unit, uuid, category " +
+                "archived, type, target_value, target_type, unit, uuid, category, parent_uuid " +
                 "FROM Habits ORDER BY position"
         ) { stmt ->
             result.add(
@@ -146,7 +147,8 @@ class LoopDBImporter(
                     targetType = stmt.getIntOrNull(15) ?: 0,
                     unit = stmt.getTextOrNull(16) ?: "",
                     uuid = stmt.getTextOrNull(17),
-                    category = stmt.getText(18)
+                    category = stmt.getText(18),
+                    parentUuid = stmt.getTextOrNull(19)
                 )
             )
         }

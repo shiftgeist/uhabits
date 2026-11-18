@@ -229,7 +229,9 @@
 
 
             <!-- Reminder -->
-            <FrameLayout style="@style/FormOuterBox">
+            <FrameLayout
+                android:id="@+id/reminderOuterBox"
+                style="@style/FormOuterBox">
                 <LinearLayout style="@style/FormInnerBox">
                     <TextView
                         style="@style/FormLabel"
@@ -251,6 +253,21 @@
                 </LinearLayout>
             </FrameLayout>
 
+
+            <FrameLayout
+                android:id="@+id/childrenOuterBox"
+                style="@style/FormOuterBox"
+                android:visibility="gone">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView
+                        style="@style/FormLabel"
+                        android:text="@string/child_habits" />
+                    <TextView
+                        android:id="@+id/childrenPicker"
+                        style="@style/FormDropdown"
+                        android:text="@string/select_child_habits" />
+                </LinearLayout>
+            </FrameLayout>
 
             <!-- Notes -->
             <FrameLayout style="@style/FormOuterBox">

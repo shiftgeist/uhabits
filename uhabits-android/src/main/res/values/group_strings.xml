@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="group_habit">Group</string>
+    <string name="group_habit_example">Sport: Gym, Running, Swimming. Any activity completes the group.</string>
+    <string name="child_habits">Child habits</string>
+    <string name="select_child_habits">Select child habits</string>
+    <string name="group_no_children">Create a Yes/No or Number habit first. Then edit this group to select child habits.</string>
+    <string name="group_entry_title">%1$s · %2$s</string>
+    <string name="group_edit">Edit group</string>
+    <string name="group_child_value">%1$s: %2$s %3$s</string>
+    <string name="group_child_complete">%1$s: complete</string>
+    <string name="group_child_incomplete">%1$s: incomplete</string>
+</resources>

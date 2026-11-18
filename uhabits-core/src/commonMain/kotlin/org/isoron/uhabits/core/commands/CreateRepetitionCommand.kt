@@ -31,9 +31,11 @@ data class CreateRepetitionCommand(
     val notes: String
 ) : Command {
     override fun run() {
+        require(!habit.isGroup)
         val entries = habit.originalEntries
         entries.add(Entry(date, value, notes))
         habit.recompute()
+        habitList.recomputeGroups()
         habitList.resort()
     }
 }

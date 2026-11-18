@@ -26,6 +26,7 @@ import dev.mokkery.matcher.any
 import dev.mokkery.mock
 import dev.mokkery.spy
 import dev.mokkery.verify
+import dev.mokkery.verify.VerifyMode.Companion.exactly
 import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.UserFile
 import org.isoron.platform.time.getToday
@@ -72,6 +73,23 @@ class ListHabitsBehaviorTest : BaseUnitTest() {
             prefs,
             bugReporter
         )
+    }
+
+    @Test
+    fun testGroupShortcutsNeverWriteGroupEntries() {
+        val group = modelFactory.buildHabit().apply {
+            type = org.isoron.uhabits.core.models.HabitType.GROUP
+            name = "Sport"
+        }
+        habitList.add(group)
+        val today = getToday()
+        behavior.onClickHabit(group.id!!)
+        behavior.onEdit(group.id!!, today, 0f, 0f)
+        behavior.onToggle(group.id!!, today, Entry.YES_MANUAL, "", 0f, 0f)
+        verify(exactly(3)) {
+            screen.showGroupEntryScreen(group.id!!, today)
+        }
+        assertTrue(group.originalEntries.getKnown().isEmpty())
     }
 
     @Test

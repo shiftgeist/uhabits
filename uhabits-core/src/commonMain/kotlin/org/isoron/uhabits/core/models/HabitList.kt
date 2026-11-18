@@ -25,6 +25,30 @@ import org.isoron.platform.io.format
  * An ordered collection of [Habit]s.
  */
 abstract class HabitList : Iterable<Habit> {
+    fun getChildren(group: Habit): List<Habit> =
+        filter { !it.isGroup && it.parentUuid == group.uuid }
+
+    fun recomputeGroups() {
+        for (group in filter { it.isGroup }) {
+            val entries = EntryList()
+            val children = getChildren(group)
+            val byDate = children.flatMap { child ->
+                child.originalEntries.getKnown().map { child to it }
+            }.groupBy { it.second.date }
+            for ((date, values) in byDate) {
+                val active = values.any { (child, entry) ->
+                    if (child.isNumerical) {
+                        entry.value > 0 && entry.value != Entry.SKIP
+                    } else {
+                        entry.value == Entry.YES_MANUAL
+                    }
+                }
+                entries.add(Entry(date, if (active) Entry.YES_MANUAL else Entry.NO))
+            }
+            group.recompute(entries)
+        }
+    }
+
     open val observable: ModelObservable = ModelObservable()
 
     open var filter: HabitMatcher = HabitMatcher(isArchivedAllowed = true)

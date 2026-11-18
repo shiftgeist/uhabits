@@ -51,11 +51,19 @@ open class ListHabitsBehavior(
     private val bugReporter: BugReporter
 ) {
     open fun onClickHabit(habitId: Long) {
+        if (habitList.getById(habitId)?.isGroup == true) {
+            screen.showGroupEntryScreen(habitId, getToday())
+            return
+        }
         screen.showHabitScreen(habitId)
     }
 
     open fun onEdit(habitId: Long, date: LocalDate, x: Float, y: Float) {
         val habit = habitList.getById(habitId) ?: return
+        if (habit.isGroup) {
+            screen.showGroupEntryScreen(habitId, date)
+            return
+        }
         val entry = habit.computedEntries.get(date)
         if (habit.type == HabitType.NUMERICAL) {
             val oldValue = entry.value.toDouble() / 1000
@@ -144,6 +152,10 @@ open class ListHabitsBehavior(
 
     open fun onToggle(habitId: Long, date: LocalDate, value: Int, notes: String, x: Float, y: Float) {
         val habit = habitList.getById(habitId) ?: return
+        if (habit.isGroup) {
+            screen.showGroupEntryScreen(habitId, date)
+            return
+        }
         commandRunner.run(
             CreateRepetitionCommand(habitList, habit, date, value, notes)
         )
@@ -170,6 +182,7 @@ open class ListHabitsBehavior(
     }
 
     interface Screen {
+        fun showGroupEntryScreen(groupId: Long, date: LocalDate)
         fun showCategoryInput(current: String, onConfirmed: (String) -> Unit)
         fun showHabitScreen(habitId: Long)
         fun showIntroScreen()
