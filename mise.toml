@@ -19,7 +19,6 @@ run = "node --no-warnings web/src/server.ts"
 
 [tasks.web-dev]
 description = "Restart the web app server when web files change"
-depends = ["web-core"]
 dir = "web"
 run = "node --run dev"
 
