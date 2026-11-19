@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createReminders, dueReminders, validateSubscription } from './reminders.ts'
+import { createReminders, dueReminders, reminderClock, validateSubscription } from './reminders.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +25,11 @@ test('subscriptions reject arbitrary network destinations and malformed keys', (
     assert.throws(() => validateSubscription({ endpoint, keys: { p256dh: 'x', auth: 'y' } }))
   }
   assert.throws(() => validateSubscription({ endpoint: 'https://fcm.googleapis.com/push', keys: { p256dh: 'x', auth: 'y' } }))
+})
+
+test('extended reminders use the preceding habit date before 03:00', () => {
+  assert.equal(reminderClock(new Date('2026-01-01T01:00:00Z'), 'UTC', true).day, '2025-12-31')
+  assert.equal(reminderClock(new Date('2026-01-01T03:00:00Z'), 'UTC', true).day, '2026-01-01')
 })
 
 test('reminders survive restart and avoid duplicate delivery within the same minute', async t => {

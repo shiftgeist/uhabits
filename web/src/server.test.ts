@@ -7,6 +7,28 @@ import test from 'node:test'
 import { createApp } from './server.ts'
 import { hc } from 'hono/client'
 import type { AppType } from './server.ts'
+import { signAction } from './notification.ts'
+
+test('notification actions require scoped credentials and preserve unrelated entries', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'loop-action-test-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const app = createApp({ dataDirectory: directory })
+  const { id, state } = await (await app.request('http://localhost:5173/api/sessions', { method: 'POST' })).json()
+  const headers = { 'X-Loop-Session': id, 'Content-Type': 'application/json' }
+  state.habits.push({ id: 'walk', name: 'Walk', type: 'boolean', parentId: null, target: 1, unit: '', color: '#6750a4', entries: {} })
+  await app.request('http://localhost:5173/api/state', { method: 'PUT', headers, body: JSON.stringify(state) })
+  await app.request('http://localhost:5173/api/push/key', { headers })
+  const { privateKey } = JSON.parse(await readFile(join(directory, 'push-keys.json'), 'utf8'))
+  const token = signAction({ session: id, habit: 'walk', day: '2026-11-19', expires: Date.now() + 60000 }, privateKey)
+  const request = (credential: string, value: number) => app.request('http://localhost:5173/api/notification', {
+    method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) })
+  assert.equal((await request('invalid', 1)).status, 401)
+  assert.equal((await request(token, 3)).status, 400)
+  assert.equal((await request(token, 1)).status, 200)
+  const saved = await (await app.request('http://localhost:5173/api/state', { headers })).json()
+  assert.equal(saved.habits[0].entries['2026-11-19'], 1)
+  assert.equal((await request(token, 0)).status, 200)
+})
 
 test('push endpoints require a database session and reject arbitrary destinations', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'loop-push-test-'))

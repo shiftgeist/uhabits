@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { activity, completed, deleteHabit, emptyState, validateState, saveHabit,
   setEntry, setRecord, settingsOf, toggleGroup, visibleHabits, filterHabits, moveHabit } from './model.ts'
-import type { Habit, HabitType } from './model.ts'
+import type { Habit, HabitType, State } from './model.ts'
 
 const day = '2026-11-18'
 const habit = (id: string, type: HabitType = 'boolean', extra: Partial<Habit> = {}): Habit => ({
@@ -147,4 +147,54 @@ test('filters support archive, completion, search, categories, and order', () =>
   assert.equal(filterHabits(state, { day, showArchived: true }).length, 4)
   state = moveHabit(state, 'other', -1)
   assert.deepEqual(visibleHabits(state).map(h => h.id), ['other', 'group', 'Alpha', 'zebra'])
+})
+
+test('completion helpers use core rules for skipped days and weekly targets', () => {
+  let state = saveHabit(emptyState(), habit('walk'))
+  state = setRecord(state, 'walk', day, 'skip')
+  assert.equal(completed(state, 'walk', day), true)
+  state = saveHabit(state, habit('distance', 'number', { target: 10,
+    settings: { ...settingsOf(), frequencyDenominator: 7 } }))
+  state = setRecord(state, 'distance', '2026-11-16', 6)
+  state = setRecord(state, 'distance', day, 4)
+  assert.equal(completed(state, 'distance', day), true)
+  assert.equal(filterHabits(state, { day, hideCompleted: true }).length, 0)
+})
+
+test('completion helpers use the core at-most zero rule without an original entry', () => {
+  const state = saveHabit(emptyState(), habit('limit', 'number', { target: 0,
+    settings: { ...settingsOf(), targetType: 1 } }))
+  assert.equal(completed(state, 'limit', day), true)
+  assert.equal(completed(state, 'missing', day), false)
+})
+
+test('shared commands preserve web metadata and input state', () => {
+  const state: State = setRecord(fixture(), 'zebra', day, 1, 'Original note')
+  state.revision = 'revision'
+  state.habits[1].android = { habit: { id: 17, custom: 'retained' }, entries: [] }
+  const snapshot = structuredClone(state)
+  const edited = saveHabit(state, { ...state.habits[1], name: ' New name ' })
+  assert.equal(edited.habits[1].name, 'New name')
+  assert.deepEqual(edited.habits[1].android, state.habits[1].android)
+  const next = setRecord(edited, 'zebra', day, 'skip')
+  assert.equal(next.habits[1].notes?.[day], 'Original note')
+  assert.equal(next.revision, 'revision')
+  assert.deepEqual(state, snapshot)
+})
+
+test('habit search includes descriptions through the core matcher', () => {
+  const state = saveHabit(emptyState(), habit('walk', 'boolean', { settings: {
+    ...settingsOf(), description: 'Outside after lunch'
+  } }))
+  assert.deepEqual(filterHabits(state, { day, search: 'outside' }).map(h => h.id), ['walk'])
+})
+
+test('activity follows core group rules for archived children and skipped records', () => {
+  let state = fixture()
+  state = saveHabit(state, { ...state.habits[1], settings: { ...settingsOf(), archived: true } })
+  state = setRecord(state, 'zebra', day, 1)
+  assert.equal(activity(state, 'group', day), 1)
+  state = setRecord(state, 'zebra', day, 'skip')
+  assert.equal(activity(state, 'group', day), 0)
+  assert.equal(activity(state, 'zebra', day), 0)
 })

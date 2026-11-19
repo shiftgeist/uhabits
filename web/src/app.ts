@@ -6,6 +6,7 @@ import { exportCSV } from './csv.ts'
 import { calculateMetrics } from './metrics.ts'
 import type { HabitMetrics } from './metrics.ts'
 import { drawChart } from './charts.ts'
+import { habitDate } from './day.ts'
 
 function $<T extends HTMLElement = HTMLElement>(selector: string): T {
   const node = document.querySelector(selector)
@@ -31,7 +32,7 @@ let metricsState: State | null = null
 let metricsOptions = ''
 
 function refreshMetrics() {
-  const today = dateKey(new Date())
+  const today = dateKey(currentDate())
   const firstWeekday = Number($<HTMLSelectElement>('#first-weekday').value)
   const scoreBucket = Number($<HTMLSelectElement>('#score-period').value)
   const totalBucket = Number($<HTMLSelectElement>('#total-period').value)
@@ -79,6 +80,10 @@ async function attempt(action: () => void | Promise<void>) {
   } finally { busy = false; }
 }
 
+function currentDate() {
+  return habitDate(new Date(), $<HTMLInputElement>('#extended-day').checked)
+}
+
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${
     String(date.getDate()).padStart(2, '0')
@@ -87,7 +92,7 @@ function dateKey(date: Date) {
 
 function dates() {
   const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date()
+    const date = currentDate()
     date.setHours(12, 0, 0, 0)
     date.setDate(date.getDate() + offset - 6 + index)
     return date
@@ -113,7 +118,7 @@ function button(text: string, label: string, action: () => void | Promise<void>,
 function render() {
   refreshMetrics()
   const days = dates()
-  const today = dateKey(new Date())
+  const today = dateKey(currentDate())
   const top = state.habits.filter(h => h.parentId === null && !settingsOf(h).archived)
   $('#summary').textContent = `${
     top.filter(h => isComplete(h.id, today)).length
@@ -437,13 +442,13 @@ function openDetails(habit: Habit) {
     ? `${settings.targetType === 1 ? 'At most' : 'At least'} ${habit.target} ${habit.unit} / ${settings.frequencyDenominator} day(s)`
     : `${settings.frequencyNumerator} repetition(s) in ${settings.frequencyDenominator} day(s)`
   $('#details-archive').textContent = settings.archived ? 'Unarchive' : 'Archive'
-  $<HTMLInputElement>('#chart-until').value = dateKey(new Date())
+  $<HTMLInputElement>('#chart-until').value = dateKey(currentDate())
   const totalPeriod = $<HTMLSelectElement>('#total-period')
   totalPeriod.options[0]!.disabled = habit.type !== 'number'
   if (habit.type !== 'number' && totalPeriod.value === '0') totalPeriod.value = '1'
   $<HTMLDialogElement>('#details').style.setProperty('--habit-color', habit.color)
   renderProgress()
-  $<HTMLInputElement>('#history-month').value = dateKey(new Date()).slice(0, 7)
+  $<HTMLInputElement>('#history-month').value = dateKey(currentDate()).slice(0, 7)
   renderHistory()
   $<HTMLDialogElement>('#details').showModal()
 }
@@ -479,7 +484,7 @@ function renderProgress() {
   if (!habit) return
   const progress = metrics[habit.id]
   if (!progress) return
-  const until = $<HTMLInputElement>('#chart-until').value || dateKey(new Date())
+  const until = $<HTMLInputElement>('#chart-until').value || dateKey(currentDate())
   const window = (points: { date: string; value: number }[]) => points.filter(p => p.date <= until).sort((a, b) => a.date.localeCompare(b.date)).slice(-60)
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`
   $('#details-overview').textContent = `Strength ${percent(progress.overview.strength)} · ${progress.overview.total} repetitions · Month change ${percent(progress.overview.monthDifference)} · Year change ${percent(progress.overview.yearDifference)}`
@@ -522,7 +527,7 @@ for (const id of ['search', 'category', 'sort', 'show-archived', 'hide-completed
 $('#jump-date').addEventListener('change', () => {
   const value = $<HTMLInputElement>('#jump-date').value
   if (!value) return
-  offset = Math.round((Date.parse(value) - Date.parse(dateKey(new Date()))) / 86_400_000)
+  offset = Math.round((Date.parse(value) - Date.parse(dateKey(currentDate()))) / 86_400_000)
   render()
 })
 $('#bulk-archive').addEventListener('click', () => attempt(() => updateSelection(h => ({ ...h, settings: { ...settingsOf(h), archived: true } }))))
@@ -572,7 +577,8 @@ $('#enable-reminders').addEventListener('click', () => attempt(async () => {
   const bytes = Uint8Array.from(atob(publicKey.replaceAll('-', '+').replaceAll('_', '/')), character => character.charCodeAt(0))
   const subscription = await registration.pushManager.getSubscription()
     ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes })
-  await checked(client.api.push.subscription.$post({ json: { subscription: subscription.toJSON(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } }))
+  await checked(client.api.push.subscription.$post({ json: { subscription: subscription.toJSON(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    extended: $<HTMLInputElement>('#extended-day').checked } }))
   report('Browser reminders enabled. Keep the local server running.')
 }))
 $('#disable-reminders').addEventListener('click', () => attempt(async () => {
@@ -585,11 +591,26 @@ $('#disable-reminders').addEventListener('click', () => attempt(async () => {
   }
   report('Browser reminders disabled for this database and device.')
 }))
-for (const id of ['quick-toggle', 'show-unknown', 'allow-skip', 'reverse-dates']) {
+for (const id of ['quick-toggle', 'show-unknown', 'allow-skip', 'reverse-dates', 'extended-day']) {
   const input = $<HTMLInputElement>(`#${id}`)
   const stored = localStorage.getItem(`loop-${id}`)
   if (stored !== null) input.checked = stored === 'true'
-  input.addEventListener('change', () => { localStorage.setItem(`loop-${id}`, String(input.checked)); render(); })
+  input.addEventListener('change', () => {
+    localStorage.setItem(`loop-${id}`, String(input.checked))
+    if (id === 'extended-day') {
+      $<HTMLInputElement>('#chart-until').value = dateKey(currentDate())
+      $<HTMLInputElement>('#history-month').value = dateKey(currentDate()).slice(0, 7)
+    }
+    render()
+    if (detailId) { renderProgress(); renderHistory(); }
+    if (id === 'extended-day') void attempt(async () => {
+      const registration = await navigator.serviceWorker?.getRegistration('/')
+      const subscription = await registration?.pushManager.getSubscription()
+      if (subscription) await checked(client.api.push.subscription.$post({ json: {
+        subscription: subscription.toJSON(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, extended: input.checked
+      } }))
+    })
+  })
 }
 const theme = $<HTMLSelectElement>('#theme')
 theme.value = localStorage.getItem('loop-theme') ?? 'system'
@@ -653,6 +674,20 @@ try {
   ready = true
   render()
   report('Database connected. The local server saves changes automatically. Export DB for a portable backup.')
+  const destination = new URLSearchParams(location.hash.slice(1))
+  const habit = state.habits.find(habit => habit.id === destination.get('habit'))
+  const day = destination.get('day') ?? ''
+  if (destination.has('habit')) {
+    const session = sessionStorage.getItem('loop-database-session') ?? ''
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(session))
+    const fingerprint = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+    if (fingerprint !== destination.get('database')) report('This reminder belongs to another database. Open that database to enter your result.', true)
+    else if (habit && /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day))) openEntries(habit, day)
+  }
 } catch (error) {
   report(errorMessage(error), true)
 }
+
+navigator.serviceWorker?.addEventListener('message', event => {
+  if (event.data?.type === 'entry-saved') report('A notification saved an entry. Reload before you make more changes.')
+})

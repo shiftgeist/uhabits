@@ -6,22 +6,13 @@ import org.isoron.platform.time.resetFirstWeekday
 import org.isoron.platform.time.resetToday
 import org.isoron.platform.time.setFirstWeekday
 import org.isoron.platform.time.setToday
-import org.isoron.uhabits.core.models.Entry
-import org.isoron.uhabits.core.models.EntryList
-import org.isoron.uhabits.core.models.Frequency
-import org.isoron.uhabits.core.models.Habit
-import org.isoron.uhabits.core.models.HabitType
-import org.isoron.uhabits.core.models.NumericalHabitType
-import org.isoron.uhabits.core.models.ScoreList
-import org.isoron.uhabits.core.models.StreakList
-import org.isoron.uhabits.core.models.memory.MemoryHabitList
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.OverviewCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.ScoreCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.TargetCardPresenter
 import org.isoron.uhabits.core.ui.views.LightTheme
 
-private fun webDate(value: String): LocalDate {
+internal fun webDate(value: String): LocalDate {
   val parts = value.split('-').map { it.toInt() }
   return LocalDate(parts[0], parts[1], parts[2])
 }
@@ -34,31 +25,7 @@ fun calculateWebMetrics(input: String): String {
   setToday(webDate(data.today as String))
   setFirstWeekday(DayOfWeek.entries[firstWeekday - 1])
   try {
-    val habits = MemoryHabitList()
-    for (row in data.habits as Array<dynamic>) {
-      val habit = Habit(
-        uuid = row.id as String,
-        parentUuid = row.parentId as String?,
-        frequency = Frequency(row.numerator as Int, row.denominator as Int),
-        targetType = if (row.targetType == 1) NumericalHabitType.AT_MOST else NumericalHabitType.AT_LEAST,
-        targetValue = row.target as Double,
-        type = when (row.type as String) {
-          "number" -> HabitType.NUMERICAL
-          "group" -> HabitType.GROUP
-          else -> HabitType.YES_NO
-        },
-        originalEntries = EntryList(),
-        computedEntries = EntryList(),
-        scores = ScoreList(),
-        streaks = StreakList()
-      )
-      for (record in row.records as Array<dynamic>) {
-        habit.originalEntries.add(Entry(webDate(record.date as String), record.value as Int, record.notes as String))
-      }
-      habit.recompute()
-      habits.add(habit)
-    }
-    habits.recomputeGroups()
+    val habits = readWebHabits(data.habits)
     val output = js("Object.create(null)")
     val theme = LightTheme()
     for (habit in habits) {

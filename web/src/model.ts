@@ -1,3 +1,5 @@
+import { core } from './core.ts'
+
 export type HabitType = 'boolean' | 'number' | 'group'
 export type AndroidFields = Record<string, string | number | null | undefined> & {
   target_type?: number
@@ -55,6 +57,35 @@ export function settingsOf(habit: Pick<Habit, 'settings' | 'android'> = {}): Hab
       hour: Number(row.reminder_hour), minute: Number(row.reminder_min), days: Number(row.reminder_days ?? 127)
     } : null
   }
+}
+
+export function coreHabits(state: State) {
+  return state.habits.map((habit, position) => {
+    const settings = settingsOf(habit)
+    const originals = new Map((habit.android?.entries ?? []).map(entry => [new Date(entry.timestamp).toISOString().slice(0, 10), entry.value]))
+    return {
+      id: habit.id, name: habit.name, type: habit.type, parentId: habit.parentId, target: habit.target,
+      unit: habit.unit, position, ...settings,
+      numerator: settings.frequencyNumerator, denominator: settings.frequencyDenominator,
+      records: Object.entries(habit.entries).map(([date, value]) => ({ date,
+        notes: habit.notes?.[date] ?? '',
+        value: !habit.editedDays?.includes(date) && originals.has(date) ? originals.get(date)
+          : habit.unknownDays?.includes(date) ? -1 : habit.skippedDays?.includes(date) ? 3
+            : habit.type === 'number' ? Math.round(value * 1000) : value ? 2 : 0
+      }))
+    }
+  })
+}
+
+function mutate(state: State, operation: string, extra: Record<string, unknown>): State {
+  return validateState(JSON.parse(core.mutateWebHabits(JSON.stringify({ state, habits: coreHabits(state), operation, ...extra }))))
+}
+
+function query(state: State, day: string, filter?: HabitFilter) {
+  requireValue(validDate(day), 'Invalid entry date.')
+  return JSON.parse(core.queryWebHabits(JSON.stringify({ habits: coreHabits(state), today: day, filter }))) as Record<string, {
+    completed: boolean; matches: boolean
+  }>
 }
 
 function requireValue(condition: unknown, message: string): asserts condition {
@@ -153,30 +184,18 @@ export function saveHabit(state: State, habit: HabitDraft): State {
   requireValue(!existing || existing.type === habit.type,
     'You cannot change an existing habit’s type.')
   const next = { ...existing, ...habit, name: habit.name.trim(), entries: existing?.entries ?? {} }
-  return validateState({ ...state, habits: existing
+  validateState({ ...state, habits: existing
     ? state.habits.map(h => h.id === next.id ? next : h)
     : [...state.habits, next] })
+  return mutate(state, 'save', { draft: next, habit: coreHabits({ ...state, habits: [next] })[0] })
 }
 
 export function deleteHabit(state: State, id: string): State {
-  return validateState({
-    ...state,
-    habits: state.habits.filter(h => h.id !== id).map(h =>
-      h.parentId === id ? { ...h, parentId: null } : h
-    ),
-    collapsedIds: state.collapsedIds.filter(value => value !== id)
-  })
+  return mutate(state, 'delete', { id })
 }
 
 export function setEntry(state: State, id: string, day: string, value: number): State {
-  const habit = state.habits.find(h => h.id === id)
-  requireValue(habit && habit.type !== 'group', 'Enter data on a child habit, not its group.')
-  return validateState({ ...state, habits: state.habits.map(h =>
-    h.id === id
-      ? { ...h, entries: { ...h.entries, [day]: value }, skippedDays: (h.skippedDays ?? []).filter(d => d !== day),
-        unknownDays: (h.unknownDays ?? []).filter(d => d !== day), editedDays: [...new Set([...(h.editedDays ?? []), day])] }
-      : h
-  ) })
+  return setRecord(state, id, day, value)
 }
 
 export function setRecord(state: State, id: string, day: string, value: number | 'skip' | null, note?: string): State {
@@ -196,9 +215,11 @@ export function setRecord(state: State, id: string, day: string, value: number |
     if (value === 'skip') skippedDays.push(day)
     if (note !== undefined) notes[day] = note
   }
-  return validateState({ ...state, habits: state.habits.map(h => h.id === id ? {
+  const next = validateState({ ...state, habits: state.habits.map(h => h.id === id ? {
     ...h, entries, notes, skippedDays, unknownDays, editedDays: [...new Set([...(h.editedDays ?? []), day])]
   } : h) })
+  return mutate(state, 'record', { id, day, next, record: coreHabits(next).find(h => h.id === id)!.records.find(r => r.date === day)
+    ?? { date: day, value: -1, notes: '' } })
 }
 
 export function moveHabit(state: State, id: string, direction: -1 | 1): State {
@@ -221,36 +242,23 @@ export interface HabitFilter {
   sort?: 'manual' | 'name' | 'color' | 'completion'
 }
 
-export function filterHabits(state: State, filter: HabitFilter, isComplete = (id: string, day: string) => completed(state, id, day)): Habit[] {
-  const habits = visibleHabits(state).filter(h => {
-    const s = settingsOf(h)
-    return (filter.showArchived || !s.archived)
-      && (!filter.hideCompleted || !isComplete(h.id, filter.day))
-      && (!filter.category || s.category === filter.category)
-      && (!filter.search || `${h.name} ${s.question} ${s.category}`.toLocaleLowerCase().includes(filter.search.toLocaleLowerCase()))
-  })
+export function filterHabits(state: State, filter: HabitFilter, isComplete?: (id: string, day: string) => boolean): Habit[] {
+  const results = query(state, filter.day, filter)
+  const complete = isComplete ?? ((id: string) => results[id]?.completed ?? false)
+  const habits = visibleHabits(state).filter(h => results[h.id]?.matches && (!filter.hideCompleted || !complete(h.id, filter.day)))
   if (filter.sort === 'name') habits.sort((a, b) => a.name.localeCompare(b.name))
   if (filter.sort === 'color') habits.sort((a, b) => a.color.localeCompare(b.color))
-  if (filter.sort === 'completion') habits.sort((a, b) => Number(isComplete(b.id, filter.day)) - Number(isComplete(a.id, filter.day)))
+  if (filter.sort === 'completion') habits.sort((a, b) => Number(complete(b.id, filter.day)) - Number(complete(a.id, filter.day)))
   return habits
 }
 
 export function activity(state: State, id: string, day: string): number {
-  const habit = state.habits.find(h => h.id === id)
-  if (!habit) return 0
-  if (habit.type === 'group') {
-    return state.habits.some(h => h.parentId === id && !settingsOf(h).archived && activity(state, h.id, day) > 0) ? 1 : 0
-  }
-  return habit.entries[day] ?? 0
+  requireValue(validDate(day), 'Invalid entry date.')
+  return JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'activity', habits: coreHabits(state), today: day, id }))) as number
 }
 
 export function completed(state: State, id: string, day: string): boolean {
-  const habit = state.habits.find(h => h.id === id)
-  if (habit?.skippedDays?.includes(day) || habit?.unknownDays?.includes(day)) return false
-  if (habit?.type === 'number' && settingsOf(habit).targetType === 1) {
-    return Object.hasOwn(habit.entries, day) && activity(state, id, day) <= habit.target
-  }
-  return Boolean(habit && activity(state, id, day) >= (habit.type === 'number' ? habit.target : 1))
+  return query(state, day)[id]?.completed ?? false
 }
 
 export function toggleGroup(state: State, id: string): State {
@@ -261,10 +269,9 @@ export function toggleGroup(state: State, id: string): State {
 }
 
 export function children(state: State, id: string): Habit[] {
-  return state.habits.filter(h => h.parentId === id)
-    .sort((a, b) =>
-      a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)
-    )
+  const ids = JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'children', habits: coreHabits(state), id }))) as string[]
+  const habits = new Map(state.habits.map(habit => [habit.id, habit]))
+  return ids.map(id => habits.get(id)!)
 }
 
 export function visibleHabits(state: State): Habit[] {

@@ -101,8 +101,13 @@ The server does not replay reminders after downtime.
 Open Loop after you change your time zone.
 Enable browser reminders again to update your time zone.
 Select **Disable browser reminders** to stop reminders for this database on this device.
-Notification clicks open Loop.
-Web does not yet support direct entry from notifications.
+Boolean notifications offer **Yes** and **No** actions when the browser supports notification actions.
+Numeric notifications offer **Enter** to open the entry dialog.
+The server checks a scoped credential before it accepts a notification action.
+Reload an open page after a notification saves an entry.
+
+Select **Extend the day until 03:00** in Settings to use the previous habit date before the day boundary.
+See [day.ts](src/day.ts) for the boundary rule.
 
 Back up the complete server data directory to preserve reminder credentials.
 Do not share this directory because it contains private keys and subscription credentials.
@@ -113,16 +118,40 @@ See [reminders.ts](src/reminders.ts) for push service compatibility and delivery
 [Android user experience](../docs/USER_EXPERIENCE.md) defines the parity target.
 Web does not yet meet that target.
 
+Web reuses the Kotlin core to avoid separate habit rules for Android and the browser.
+Web-specific Kotlin adapters use separate files to reduce conflicts when we merge upstream updates.
+See [the core bridge](../uhabits-core/src/jsMain/kotlin/WebHabits.kt) for shared commands and queries.
+See [the metrics bridge](../uhabits-core/src/jsMain/kotlin/WebMetrics.kt) for progress calculations.
+The TypeScript adapters preserve web state and Android metadata across these calls.
+Web keeps its spreadsheet CSV format because Android exports a different ZIP archive.
+
+### Reuse policy
+
+Keep Kotlin responsible for behavior rather than recreate the core in TypeScript.
+Maximize reuse from the original core and Android code.
+This goal includes file operations, imports, exports, date rules, time calculations, and utilities.
+Reuse existing implementations before adding web equivalents.
+
+Keep TypeScript responsible for the web interface and platform adapters.
+Adapters connect web capabilities to Kotlin behavior; they must not duplicate domain rules.
+Expose more Kotlin operations through a bridge when the current bridge lacks an operation.
+Adapt only platform boundaries when an existing implementation requires browser, JVM, or Android APIs.
+Move reusable Kotlin behavior into the shared core when Android dependencies prevent direct reuse.
+Keep Android-specific behavior on Android when it requires Android services.
+
+This policy defines the reuse goal, not the current coverage.
+Use Bun alone only if Kotlin/JS can provide the entire core that the web app needs.
+Otherwise, use Bun with a Kotlin/JVM process through a small bridge.
+Prefer JVM reuse over a TypeScript replacement for missing Kotlin/JS behavior.
+Neither runtime can directly execute code that requires Android services.
+
 These journeys still need work:
 
-- Review Android habit strength, streaks, frequency charts, and totals.
-- Evaluate completion with Android frequency rules and numeric periods.
-- Enter results directly from reminder notifications.
 - Use widget equivalents outside the main habit list.
 - Import migration files from other habit apps.
 - Repair a database or generate a diagnostic report.
 - Complete an introductory walkthrough.
-- Configure the first weekday, extended day, or animation preferences.
+- Configure animation preferences.
 
 The habit editor also saves reminder settings for Android.
 Browser controls use context menus instead of Android long-press gestures.

@@ -1,4 +1,5 @@
-import webPush from 'web-push'
+import * as webPush from 'web-push'
+import { createHash } from 'node:crypto'
 import type { PushSubscription } from 'web-push'
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -6,6 +7,7 @@ import { settingsOf } from './model.ts'
 import type { State } from './model.ts'
 import { openDatabase } from './android-backup.ts'
 import { calculateMetrics } from './metrics.ts'
+import { signAction, verifyAction } from './notification.ts'
 
 export function validateSubscription(value: unknown): PushSubscription {
   const input = value as PushSubscription
@@ -21,16 +23,18 @@ export function validateSubscription(value: unknown): PushSubscription {
   return { endpoint: url.href, keys: { p256dh: input.keys.p256dh, auth: input.keys.auth } }
 }
 
-export function reminderClock(now: Date, timeZone: string) {
+export function reminderClock(now: Date, timeZone: string, extended = false) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now)
   const get = (type: string) => parts.find(part => part.type === type)!.value
-  const day = `${get('year')}-${get('month')}-${get('day')}`
-  return { day, hour: Number(get('hour')), minute: Number(get('minute')), weekday: (new Date(`${day}T12:00:00Z`).getUTCDay() + 1) % 7 }
+  let day = `${get('year')}-${get('month')}-${get('day')}`
+  const weekday = (new Date(`${day}T12:00:00Z`).getUTCDay() + 1) % 7
+  if (extended && Number(get('hour')) < 3) day = new Date(Date.parse(`${day}T12:00:00Z`) - 86400000).toISOString().slice(0, 10)
+  return { day, hour: Number(get('hour')), minute: Number(get('minute')), weekday }
 }
 
-export function dueReminders(state: State, now: Date, timeZone: string, complete: (id: string, day: string) => boolean) {
-  const clock = reminderClock(now, timeZone)
+export function dueReminders(state: State, now: Date, timeZone: string, complete: (id: string, day: string) => boolean, extended = false) {
+  const clock = reminderClock(now, timeZone, extended)
   return state.habits.filter(habit => {
     const settings = settingsOf(habit)
     const reminder = settings.reminder
@@ -40,7 +44,7 @@ export function dueReminders(state: State, now: Date, timeZone: string, complete
   })
 }
 
-interface Registration { subscription: PushSubscription; timeZone: string; sent: Record<string, string> }
+interface Registration { subscription: PushSubscription; timeZone: string; extended?: boolean; sent: Record<string, string> }
 
 export function createReminders(directory: string, send = webPush.sendNotification) {
   let pending = Promise.resolve()
@@ -69,15 +73,16 @@ export function createReminders(directory: string, send = webPush.sendNotificati
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
   }
   return {
+    authorize: (token: string) => serial(async () => verifyAction(token, (await keys()).privateKey)),
     publicKey: () => serial(async () => (await keys()).publicKey),
-    subscribe: (id: string, value: unknown, timeZone: string) => serial(async () => {
+    subscribe: (id: string, value: unknown, timeZone: string, extended = false) => serial(async () => {
       const subscription = validateSubscription(value)
       reminderClock(new Date(), timeZone)
       const items = await registrations(id)
       const previous = items.find(item => item.subscription.endpoint === subscription.endpoint)
       const others = items.filter(item => item !== previous)
       if (others.length >= 8) throw new Error('Too many reminder devices.')
-      await save(`${id}.push.json`, [...others, { subscription, timeZone, sent: previous?.sent ?? {} }])
+      await save(`${id}.push.json`, [...others, { subscription, timeZone, extended, sent: previous?.sent ?? {} }])
     }),
     unsubscribe: (id: string, endpoint?: string) => serial(async () => {
       await save(`${id}.push.json`, endpoint ? (await registrations(id)).filter(item => item.subscription.endpoint !== endpoint) : [])
@@ -98,18 +103,22 @@ export function createReminders(directory: string, send = webPush.sendNotificati
         database.close()
         const remaining: Registration[] = []
         for (const item of items) {
-          const clock = reminderClock(now, item.timeZone)
+          const clock = reminderClock(now, item.timeZone, item.extended)
           const metrics = calculateMetrics(state, clock.day)
           let expired = false
           const sent: Record<string, string> = {}
           for (const habit of state.habits) if (item.sent[habit.id]?.startsWith(clock.day)) sent[habit.id] = item.sent[habit.id]!
           item.sent = sent
-          for (const habit of dueReminders(state, now, item.timeZone, (id, day) => metrics[id]?.entries[day]?.completed ?? false)) {
+          for (const habit of dueReminders(state, now, item.timeZone, (id, day) => metrics[id]?.entries[day]?.completed ?? false, item.extended)) {
             const stamp = `${clock.day}:${clock.hour}:${clock.minute}`
             if (item.sent[habit.id] === stamp) continue
             try {
               await send(validateSubscription(item.subscription), JSON.stringify({ title: habit.name,
-                body: settingsOf(habit).question || 'Time for your habit.', tag: habit.id }), {
+                body: settingsOf(habit).question || 'Time for your habit.', tag: habit.id,
+                habit: habit.id, day: clock.day, type: habit.type,
+                database: createHash('sha256').update(id).digest('hex'),
+                token: habit.type === 'boolean' ? signAction({ session: id, habit: habit.id, day: clock.day,
+                  expires: now.getTime() + 24 * 60 * 60 * 1000 }, (await keys()).privateKey) : undefined }), {
                 TTL: 300, timeout: 10000, vapidDetails: { ...await keys(), subject: 'https://loophabits.org' }
               })
               item.sent[habit.id] = stamp

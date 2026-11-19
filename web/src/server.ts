@@ -9,7 +9,7 @@ import { Hono } from 'hono'
 import { secureHeaders } from 'hono/secure-headers'
 import { bodyLimit } from 'hono/body-limit'
 import { LoopDatabase, openDatabase, ServerSQLite } from './android-backup.ts'
-import { validateState } from './model.ts'
+import { validateState, setRecord } from './model.ts'
 import { validator } from 'hono/validator'
 import { createReminders } from './reminders.ts'
 
@@ -22,6 +22,8 @@ const assets = {
   '/csv.ts': 'csv.ts',
   '/metrics.ts': 'metrics.ts',
   '/charts.ts': 'charts.ts',
+  '/day.ts': 'day.ts',
+  '/core.ts': 'core.ts',
   '/style.css': 'style.css',
   '/sw.js': 'sw.js'
 }
@@ -85,6 +87,13 @@ export function createApp(options: { dataDirectory?: string; reminders?: ReturnT
     } catch (error) { native.close(); throw error; }
   })
   .use('/api/*', async (c, next) => {
+    if (c.req.path === '/api/notification' && c.req.method === 'POST') {
+      try {
+        const action = await reminders?.authorize(c.req.header('Authorization')?.replace(/^Bearer /, '') ?? '')
+        if (!action) return c.json({ error: 'Invalid notification credential.' }, 401)
+        c.req.raw.headers.set('X-Loop-Session', action.session)
+      } catch { return c.json({ error: 'Invalid or expired notification credential.' }, 401); }
+    }
     const id = c.req.header('X-Loop-Session') ?? ''
     if (!sessions.has(id) && options.dataDirectory && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(id)) {
       try {
@@ -107,14 +116,33 @@ export function createApp(options: { dataDirectory?: string; reminders?: ReturnT
     try { await next(); } finally { release(); }
   })
   .get('/api/state', c => c.json(sessions.get(c.req.header('X-Loop-Session')!)!.database.read()))
+  .post('/api/notification', async c => {
+    const action = await reminders!.authorize(c.req.header('Authorization')!.replace(/^Bearer /, ''))
+    const session = sessions.get(action.session)!
+    const previous = session.database.export()
+    try {
+      const { value } = await c.req.json()
+      const state = session.database.read()
+      const habit = state.habits.find(habit => habit.id === action.habit)
+      if (!habit || habit.type !== 'boolean' || ![0, 1].includes(value)) throw new Error('Invalid notification action.')
+      session.database.write(setRecord(state, habit.id, action.day, value))
+      await persist(action.session, session.database)
+      return c.json({ saved: true })
+    } catch (error) {
+      session.database.close()
+      session.database = openDatabase(previous)
+      return c.json({ error: 'Could not save this notification action.' }, 400)
+    }
+  })
   .get('/api/push/key', async c => reminders
     ? c.json({ publicKey: await reminders.publicKey() }) : c.json({ error: 'Reminders require persistent storage.' }, 503))
   .post('/api/push/subscription', async c => {
     if (!reminders) return c.json({ error: 'Reminders require persistent storage.' }, 503)
     try {
-      const { subscription, timeZone } = await c.req.json()
+      const { subscription, timeZone, extended = false } = await c.req.json()
+      if (typeof extended !== 'boolean') throw new Error('Invalid extended day preference.')
       if (typeof timeZone !== 'string' || timeZone.length > 100) throw new Error('Invalid time zone.')
-      await reminders.subscribe(c.req.header('X-Loop-Session')!, subscription, timeZone)
+      await reminders.subscribe(c.req.header('X-Loop-Session')!, subscription, timeZone, extended)
       return c.json({ enabled: true })
     } catch { return c.json({ error: 'Invalid subscription, time zone, or unsupported push service.' }, 400); }
   })
