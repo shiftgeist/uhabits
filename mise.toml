@@ -1,6 +1,6 @@
 [tools]
 android-sdk = "23.0"
-java = "temurin-17.0.21+9"
+java = "temurin-25.0.5+8.0.LTS"
 node = "26"
 
 [tasks.android-setup]

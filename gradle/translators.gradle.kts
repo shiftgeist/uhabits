@@ -9,11 +9,11 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        "classpath"(group = "com.opencsv", name = "opencsv", version = "5.4")
+        "classpath"("com.opencsv:opencsv:5.4")
     }
 }
 
-task("updateTranslators") {
+tasks.register("updateTranslators") {
     doLast {
         fun updateTranslatorLayouts() {
             val translators = mutableMapOf<String, MutableList<String>>()

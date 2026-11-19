@@ -24,10 +24,14 @@ plugins {
 }
 
 kotlin {
-    jvm()
-    jvmToolchain(17)
+    jvm {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+    jvmToolchain(25)
 
-    js(IR) {
+    js {
         useEsModules()
         binaries.library()
         browser {
@@ -95,7 +99,13 @@ kotlin {
     }
 }
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
 mokkery {
+    ignoreFinalMembers.set(true)
     defaultMockMode.set(dev.mokkery.MockMode.autofill)
     stubs.allowConcreteClassInstantiation.set(true)
 }
