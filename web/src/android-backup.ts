@@ -1,4 +1,4 @@
-import { emptyState, validateState } from './model.ts'
+import { emptyState, validateState, settingsOf } from './model.ts'
 import type { AndroidFields, State } from './model.ts'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
@@ -47,6 +47,7 @@ function nearestColor(color: string): number {
 
 export class LoopDatabase {
   private db: ServerSQLite
+  private revision = crypto.randomUUID()
 
   constructor(db: ServerSQLite) {
     this.db = db
@@ -79,26 +80,37 @@ export class LoopDatabase {
 
   read(collapsedIds: string[] = []): State {
     const state = emptyState()
+    state.revision = this.revision
     const records = this.rows('SELECT * FROM Repetitions ORDER BY timestamp')
     for (const row of this.rows('SELECT * FROM Habits ORDER BY position')) {
       const type = types[Number(row.type ?? 0)]
       if (!type) throw new Error('Unsupported Android habit type.')
       const entries: Record<string, number> = {}
+      const notes: Record<string, string> = {}
+      const skippedDays: string[] = []
+      const unknownDays: string[] = []
       for (const entry of records.filter(entry => entry.habit === row.id)) {
         const timestamp = Number(entry.timestamp)
         const value = Number(entry.value)
         if (!Number.isSafeInteger(timestamp) || timestamp % millisecondsPerDay !== 0 || !Number.isSafeInteger(value)) {
           throw new Error('Invalid Android daily entry.')
         }
-        if (type !== 'group') entries[new Date(timestamp).toISOString().slice(0, 10)] = type === 'number'
-          ? Math.max(0, value / 1000) : Number(value === 2)
+        if (type !== 'group') {
+          const day = new Date(timestamp).toISOString().slice(0, 10)
+          entries[day] = type === 'number' && value !== 3 ? Math.max(0, value / 1000) : Number((value === 2 || value === 1) && type === 'boolean')
+          notes[day] = String(entry.notes ?? '')
+          if (value === 3) skippedDays.push(day)
+          if (value === -1) unknownDays.push(day)
+        }
       }
       state.habits.push({
         id: String(row.uuid || `legacy-${row.id}`), name: String(row.name), type,
         parentId: row.parent_uuid ? String(row.parent_uuid) : null,
         target: type === 'number' ? Number(row.target_value) : 1,
-        unit: String(row.unit ?? ''), color: palette[Number(row.color)] ?? palette[0], entries,
-        android: { habit: row, entries: [] }
+        unit: String(row.unit ?? ''), color: palette[Number(row.color)] ?? palette[0], entries, notes, skippedDays, unknownDays,
+        android: { habit: row, entries: records.filter(entry => entry.habit === row.id).map(entry => ({
+          timestamp: Number(entry.timestamp), value: Number(entry.value), notes: String(entry.notes ?? '')
+        })) }
       })
     }
     state.collapsedIds = collapsedIds.filter(id => state.habits.some(h => h.id === id && h.type === 'group'))
@@ -107,6 +119,7 @@ export class LoopDatabase {
 
   write(input: State): State {
     const next = validateState(input)
+    if (next.revision !== undefined && next.revision !== this.revision) throw new Error('Another tab changed this database. Reload before you edit again.')
     const previous = this.read()
     this.db.run('BEGIN')
     try {
@@ -124,10 +137,32 @@ export class LoopDatabase {
         let id = Number(old?.android?.habit.id)
         if (old) {
           if (old.type !== habit.type) throw new Error('You cannot change an existing habit’s type.')
-          const updates: Record<string, SqlValue> = { name: habit.name, unit: habit.unit }
+          const updates: Record<string, SqlValue> = { name: habit.name, unit: habit.unit, position }
           if (columns.includes('parent_uuid')) updates.parent_uuid = habit.parentId
           if (old.color !== habit.color) updates.color = nearestColor(habit.color)
           if (habit.type === 'number') updates.target_value = habit.target
+          if (habit.settings) {
+            const s = habit.settings
+            const before = settingsOf(old)
+            const fields: Record<string, [unknown, unknown, SqlValue]> = {
+              question: [s.question, before.question, s.question], description: [s.description, before.description, s.description],
+              category: [s.category, before.category, s.category], archived: [s.archived, before.archived, Number(s.archived)],
+              freq_num: [s.frequencyNumerator, before.frequencyNumerator, s.frequencyNumerator],
+              freq_den: [s.frequencyDenominator, before.frequencyDenominator, s.frequencyDenominator],
+              target_type: [s.targetType, before.targetType, s.targetType]
+            }
+            for (const [key, [after, previous, value]] of Object.entries(fields)) {
+              if (after !== previous) {
+                if (!columns.includes(key)) throw new Error(`This database does not support ${key}. Import a current Android backup.`)
+                updates[key] = value
+              }
+            }
+            if (JSON.stringify(s.reminder) !== JSON.stringify(before.reminder)) {
+              updates.reminder_hour = s.reminder?.hour ?? null
+              updates.reminder_min = s.reminder?.minute ?? null
+              updates.reminder_days = s.reminder?.days ?? 0
+            }
+          }
           this.db.run(`UPDATE Habits SET ${Object.keys(updates).map(key => `${key}=?`).join(',')} WHERE id=?`, [...Object.values(updates), id])
         } else {
           id = Number(this.rows('SELECT COALESCE(MAX(id),0)+1 AS id FROM Habits')[0].id)
@@ -139,25 +174,45 @@ export class LoopDatabase {
             target_value: habit.type === 'number' ? habit.target : 0, category: ''
           }
           const keys = columns.filter(key => Object.hasOwn(row, key))
+          const s = settingsOf(habit)
+          Object.assign(row, { description: s.description, question: s.question, category: s.category,
+            archived: Number(s.archived), freq_num: s.frequencyNumerator, freq_den: s.frequencyDenominator,
+            target_type: s.targetType, reminder_hour: s.reminder?.hour ?? null,
+            reminder_min: s.reminder?.minute ?? null, reminder_days: s.reminder?.days ?? 0 })
+          if (s.category && !columns.includes('category')) throw new Error('This database does not support categories. Import a current Android backup.')
           this.db.run(`INSERT INTO Habits (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`, keys.map(key => row[key]))
         }
         if (habit.type === 'group') continue
+        for (const day of Object.keys(old?.entries ?? {})) {
+          if (!Object.hasOwn(habit.entries, day)) this.db.run('DELETE FROM Repetitions WHERE habit=? AND timestamp=?', [id, Date.parse(`${day}T00:00:00Z`)])
+        }
         for (const [day, value] of Object.entries(habit.entries)) {
-          if (old && Object.hasOwn(old.entries, day) && old.entries[day] === value) continue
-          const raw = habit.type === 'number' ? Math.round(value * 1000) : value ? 2 : 0
-          if (habit.type === 'number' && Math.abs(value * 1000 - raw) > 0.000001) {
+          const skipped = habit.skippedDays?.includes(day) ?? false
+          const unknown = habit.unknownDays?.includes(day) ?? false
+          const note = habit.notes?.[day] ?? old?.notes?.[day] ?? ''
+          const sameValue = old && !habit.editedDays?.includes(day) && Object.hasOwn(old.entries, day) && old.entries[day] === value
+            && skipped === (old.skippedDays?.includes(day) ?? false)
+            && unknown === (old.unknownDays?.includes(day) ?? false)
+          if (sameValue && note === (old.notes?.[day] ?? '')) continue
+          if (sameValue) {
+            this.db.run('UPDATE Repetitions SET notes=? WHERE habit=? AND timestamp=?', [note, id, Date.parse(`${day}T00:00:00Z`)])
+            continue
+          }
+          const raw = unknown ? -1 : skipped ? 3 : habit.type === 'number' ? Math.round(value * 1000) : value ? 2 : 0
+          if (habit.type === 'number' && !skipped && !unknown && Math.abs(value * 1000 - raw) > 0.000001) {
             throw new Error('Android supports at most three decimal places.')
           }
           if (!Number.isSafeInteger(raw) || raw > 2147483647) throw new Error('Value exceeds Android numeric range.')
           const timestamp = Date.parse(`${day}T00:00:00Z`)
           const existing = this.rows('SELECT value FROM Repetitions WHERE habit=? AND timestamp=?', [id, timestamp])
-          if (existing.length) this.db.run('UPDATE Repetitions SET value=? WHERE habit=? AND timestamp=?', [raw, id, timestamp])
-          else this.db.run('INSERT INTO Repetitions (habit,timestamp,value,notes) VALUES (?,?,?,?)', [id, timestamp, raw, ''])
+          if (existing.length) this.db.run('UPDATE Repetitions SET value=?,notes=? WHERE habit=? AND timestamp=?', [raw, note, id, timestamp])
+          else this.db.run('INSERT INTO Repetitions (habit,timestamp,value,notes) VALUES (?,?,?,?)', [id, timestamp, raw, note])
         }
       }
       const result = this.read(next.collapsedIds)
       this.db.run('COMMIT')
-      return result
+      this.revision = crypto.randomUUID()
+      return { ...result, revision: this.revision }
     } catch (error) {
       this.db.run('ROLLBACK')
       throw error

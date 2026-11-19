@@ -3,6 +3,7 @@
 ## Scope and evidence
 
 This guide describes user journeys in the Android app.
+Android launcher widgets and OS permission screens are platform-specific.
 It covers the current source, not a specific published release.
 Source inspection supports this guide.
 No device session verified visual quality, accessibility, or notification delivery.

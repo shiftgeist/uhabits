@@ -68,7 +68,7 @@ button {
 button:hover {
   background: var(--tint);
 }
-button:focus-visible, input:focus-visible, select:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
@@ -321,7 +321,7 @@ input[type="checkbox"] {
   }
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #17151e;
     --surface: #211e2b;
     --text: #e9e3f5;
@@ -336,4 +336,92 @@ input[type="checkbox"] {
   #status.error, .danger {
     color: #ffb4ab;
   }
+}
+.filters, .actions {
+  flex-wrap: wrap;
+}
+.filters {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  margin: 20px 0;
+}
+.filters label {
+  margin: 0;
+}
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+dialog {
+  max-height: 90dvh;
+  overflow: auto;
+}
+#reminder-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--line);
+}
+#reminder-days label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  margin: 12px 0;
+}
+.history-grid button {
+  min-height: 44px;
+  padding: 5px;
+  overflow-wrap: anywhere;
+}
+.history-grid .done {
+  background: var(--tint);
+  color: var(--accent);
+}
+.preserve-lines {
+  white-space: pre-wrap;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"], :root[data-theme="black"] {
+  color-scheme: dark;
+  --bg: #17151e;
+  --surface: #211e2b;
+  --text: #e9e3f5;
+  --muted: #aaa1bc;
+  --line: #373140;
+  --accent: #cbb4ff;
+  --tint: #2b243b;
+}
+:root[data-theme="black"] { --bg: #000; --surface: #000; }
+.chart {
+  width: 100%;
+  height: auto;
+  color: var(--habit-color, var(--accent));
+  fill: currentColor;
+}
+.chart text {
+  fill: var(--text);
+  font: 12px system-ui, sans-serif;
+}
+#details {
+  width: min(94vw, 760px);
+}
+#details section {
+  margin: 24px 0;
+}
+#details details table {
+  min-width: 0;
+  width: 100%;
 }

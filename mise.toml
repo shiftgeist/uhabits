@@ -14,4 +14,15 @@ run = "bash ./gradlew :uhabits-android:assembleDebug && echo 'uhabits-android/bu
 
 [tasks.web]
 description = "Run the web app server"
-run = "node --no-warnings web/server.ts"
+depends = ["web-core"]
+run = "node --no-warnings web/src/server.ts"
+
+[tasks.web-dev]
+description = "Restart the web app server when web files change"
+depends = ["web-core"]
+dir = "web"
+run = "node --run dev"
+
+[tasks.web-core]
+description = "Build the shared Android core for the web app"
+run = "./gradlew :uhabits-core:jsBrowserProductionLibraryDistribution"

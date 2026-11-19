@@ -3,13 +3,13 @@ import Database from 'better-sqlite3'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { LoopDatabase, openDatabase, ServerSQLite } from './android-backup.ts'
-import { completed, deleteHabit, saveHabit, setEntry } from './model.ts'
+import { completed, deleteHabit, saveHabit, setEntry, setRecord, settingsOf, moveHabit } from './model.ts'
 import type { AndroidFields } from './model.ts'
 
 async function fixture(version = 27) {
   const native = new Database(':memory:')
   for (let n = 9; n <= version; n++) {
-    native.exec(await readFile(new URL(`../uhabits-core/assets/main/migrations/${String(n).padStart(2, '0')}.sql`, import.meta.url), 'utf8'))
+    native.exec(await readFile(new URL(`../../uhabits-core/assets/main/migrations/${String(n).padStart(2, '0')}.sql`, import.meta.url), 'utf8'))
   }
   native.exec(`PRAGMA user_version=${version}`)
   const adapter = new ServerSQLite(native)
@@ -20,6 +20,79 @@ const draft = (id: string, type: 'boolean' | 'number' | 'group' = 'boolean') => 
   id, name: id, type, parentId: null, target: 10, unit: '', color: '#d32f2f'
 })
 const day = '2026-11-18'
+
+test('rejects a stale snapshot instead of replacing another tab’s edits', async () => {
+  const { adapter } = await fixture()
+  try {
+    const database = new LoopDatabase(adapter)
+    const first = database.read()
+    const second = database.read()
+    database.write(saveHabit(first, draft('first')))
+    assert.throws(() => database.write(saveHabit(second, draft('second'))), /another tab/i)
+    assert.deepEqual(database.read().habits.map(h => h.id), ['first'])
+  } finally { adapter.close(); }
+})
+
+test('numeric skipped days use the Android reserved value rather than a tiny numeric result', async () => {
+  const { native, adapter } = await fixture()
+  try {
+    const database = new LoopDatabase(adapter)
+    const state = saveHabit(database.read(), draft('walk', 'number'))
+    const result = database.write(setRecord(state, 'walk', day, 'skip', 'Rest'))
+    assert.deepEqual(result.habits[0].skippedDays, [day])
+    assert.equal(result.habits[0].entries[day], 0)
+    assert.equal(native.prepare<[], AndroidFields>('SELECT value FROM Repetitions').get()?.value, 3)
+  } finally { adapter.close(); }
+})
+
+test('unknown days can retain a date note without becoming an explicit no', async () => {
+  const { native, adapter } = await fixture()
+  try {
+    const database = new LoopDatabase(adapter)
+    const state = saveHabit(database.read(), draft('check'))
+    const result = database.write(setRecord(state, 'check', day, null, 'No measurement today'))
+    assert.deepEqual(result.habits[0].unknownDays, [day])
+    assert.equal(result.habits[0].notes?.[day], 'No measurement today')
+    assert.equal(native.prepare<[], AndroidFields>('SELECT value FROM Repetitions').get()?.value, -1)
+    assert.equal(completed(result, 'check', day), false)
+  } finally { adapter.close(); }
+})
+
+test('explicitly editing an automatic entry replaces its reserved raw state', async () => {
+  const { native, adapter } = await fixture()
+  try {
+    const database = new LoopDatabase(adapter)
+    database.write(saveHabit(database.read(), draft('check')))
+    native.prepare('INSERT INTO Repetitions (habit,timestamp,value,notes) VALUES (1,?,?,?)').run(Date.parse(day), 1, 'automatic')
+    database.write(setRecord(database.read(), 'check', day, 0, 'Explicit no'))
+    assert.equal(native.prepare<[], AndroidFields>('SELECT value FROM Repetitions').get()?.value, 0)
+  } finally { adapter.close(); }
+})
+
+test('round trips editable settings, skipped records, notes, unknown records, and manual order', async () => {
+  const { native, adapter } = await fixture()
+  try {
+    const database = new LoopDatabase(adapter)
+    let state = saveHabit(database.read(), draft('check'))
+    state = saveHabit(state, { ...draft('limit', 'number'), target: 0, settings: {
+      ...settingsOf(state.habits[0]), question: 'Enough?', description: 'Routine notes',
+      category: 'Health', archived: true, targetType: 1, frequencyDenominator: 7,
+      reminder: { hour: 9, minute: 15, days: 62 }
+    } })
+    state = setRecord(state, 'check', day, 'skip', 'Rest')
+    state = database.write(moveHabit(state, 'limit', -1))
+    assert.equal(state.habits[0].id, 'limit')
+    assert.equal(settingsOf(state.habits[0]).description, 'Routine notes')
+    assert.equal(settingsOf(state.habits[0]).targetType, 1)
+    assert.deepEqual(settingsOf(state.habits[0]).reminder, { hour: 9, minute: 15, days: 62 })
+    assert.deepEqual(state.habits[1].skippedDays, [day])
+    assert.equal(state.habits[1].notes?.[day], 'Rest')
+    assert.equal(native.prepare<[], AndroidFields>('SELECT value FROM Repetitions').get()?.value, 3)
+    state = database.write(setRecord(state, 'check', day, null))
+    assert.equal(Object.hasOwn(state.habits[1].entries, day), false)
+    assert.equal(native.prepare<[], AndroidFields>('SELECT count(*) AS n FROM Repetitions').get()?.n, 0)
+  } finally { adapter.close(); }
+})
 
 test('edits SQLite rows directly and preserves unrelated metadata, IDs, notes and tables', async () => {
   const { native, adapter } = await fixture()
@@ -87,7 +160,7 @@ test('opens and exports SQLite bytes directly, then reopens the exported databas
   const native = new ServerSQLite()
   try {
     for (let n = 9; n <= 27; n++) {
-      native.executeScript(await readFile(new URL(`../uhabits-core/assets/main/migrations/${String(n).padStart(2, '0')}.sql`, import.meta.url), 'utf8'))
+      native.executeScript(await readFile(new URL(`../../uhabits-core/assets/main/migrations/${String(n).padStart(2, '0')}.sql`, import.meta.url), 'utf8'))
     }
     native.run('PRAGMA user_version=27')
     assert.throws(() => openDatabase(new TextEncoder().encode('not a database')), /SQLite/)

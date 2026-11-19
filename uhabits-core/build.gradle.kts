@@ -28,6 +28,8 @@ kotlin {
     jvmToolchain(17)
 
     js(IR) {
+        useEsModules()
+        binaries.library()
         browser {
             testTask {
                 useKarma {

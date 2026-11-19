@@ -3,15 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --no-warnings server.ts",
-    "test": "node --no-warnings --test *.test.ts",
+    "build:core": "../gradlew -p .. :uhabits-core:jsBrowserProductionLibraryDistribution",
+    "dev": "node --run build:core && node --no-warnings --watch-path=src --watch-path=public src/server.ts",
+    "start": "node --run build:core && node --no-warnings src/server.ts",
+    "test": "node --run build:core && node --no-warnings --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "2.1.7",
     "better-sqlite3": "13.1.1",
     "drizzle-orm": "0.45.4",
-    "hono": "4.13.18"
+    "hono": "4.13.18",
+    "web-push": "3.6.7"
   },
   "packageManager": "pnpm@12.21.0+sha512.66fd8278ee28935ce951792d34367ff3af5c432a2756445823029533835b8da529bbe0be5130afd56ed0713fb8789e47bad82d93bd5ae2fe54b15562d6276ef0",
   "engines": {
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "26.6.6",
+    "@types/web-push": "3.6.4",
     "typescript": "7.0.2"
   }
 }

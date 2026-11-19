@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { activity, completed, deleteHabit, emptyState, validateState, saveHabit,
-  setEntry, toggleGroup, visibleHabits } from './model.ts'
+  setEntry, setRecord, settingsOf, toggleGroup, visibleHabits, filterHabits, moveHabit } from './model.ts'
 import type { Habit, HabitType } from './model.ts'
 
 const day = '2026-11-18'
@@ -107,4 +107,44 @@ test('one collapsed group leaves another group and its children visible', () => 
   state = toggleGroup(state, 'group')
   assert.deepEqual(visibleHabits(state).map(h => h.id), ['group', 'other', 'second', 'child'])
   assert.deepEqual(validateState(emptyState()), emptyState())
+})
+
+test('records distinguish skipped, unknown, and explicit no while preserving notes', () => {
+  let state = setRecord(fixture(), 'zebra', day, 1, 'After lunch')
+  assert.equal(state.habits[1].notes?.[day], 'After lunch')
+  state = setRecord(state, 'zebra', day, 'skip', 'Rest day')
+  assert.deepEqual(state.habits[1].skippedDays, [day])
+  assert.equal(completed(state, 'group', day), false)
+  state = setEntry(state, 'zebra', day, 0)
+  assert.deepEqual(state.habits[1].skippedDays, [])
+  assert.equal(state.habits[1].notes?.[day], 'Rest day')
+  state = setRecord(state, 'zebra', day, null)
+  assert.equal(Object.hasOwn(state.habits[1].entries, day), false)
+  assert.equal(Object.hasOwn(state.habits[1].notes ?? {}, day), false)
+})
+
+test('settings validate frequency, reminders, archive, and at-most zero targets', () => {
+  const h = habit('limit', 'number', { target: 0, settings: {
+    ...settingsOf(habit('limit')), targetType: 1, frequencyNumerator: 1,
+    frequencyDenominator: 7, archived: true, category: 'Health',
+    reminder: { hour: 8, minute: 30, days: 127 }
+  } })
+  const state = saveHabit(emptyState(), h)
+  assert.equal(settingsOf(state.habits[0]).category, 'Health')
+  for (const settings of [
+    { ...h.settings!, frequencyNumerator: 0 },
+    { ...h.settings!, frequencyDenominator: 0 },
+    { ...h.settings!, frequencyNumerator: 8 },
+    { ...h.settings!, reminder: { hour: 24, minute: 0, days: 127 } }
+  ]) assert.throws(() => saveHabit(state, { ...h, settings }))
+})
+
+test('filters support archive, completion, search, categories, and order', () => {
+  let state = fixture()
+  state = saveHabit(state, { ...state.habits[3], settings: { ...settingsOf(state.habits[3]), archived: true } })
+  assert.equal(filterHabits(state, { day }).some(h => h.id === 'other'), false)
+  assert.deepEqual(filterHabits(state, { day, search: 'alpha' }).map(h => h.id), ['Alpha'])
+  assert.equal(filterHabits(state, { day, showArchived: true }).length, 4)
+  state = moveHabit(state, 'other', -1)
+  assert.deepEqual(visibleHabits(state).map(h => h.id), ['other', 'group', 'Alpha', 'zebra'])
 })

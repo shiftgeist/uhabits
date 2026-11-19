@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Loop Web · Habit tracker</title>
+    <link rel="stylesheet" href="./style.css">
+    <script type="module" src="./app.ts"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">A LITTLE, EVERY DAY</p>
+          <h1>Loop <span>Web</span></h1>
+        </div>
+        <div class="actions">
+          <button id="import">Import DB</button>
+          <button id="export">Export DB</button>
+          <button id="csv">Export CSV</button>
+          <button id="preferences">Settings</button>
+          <button id="add" class="primary">+ New habit</button>
+        </div>
+      </header>
+        <div class="filters">
+          <label>Search<input id="search" type="search" placeholder="Find habits"></label>
+          <label>Category<select id="category"><option value="">All categories</option></select></label>
+          <label>Order<select id="sort"><option value="manual">Manual</option><option value="name">Name</option><option value="color">Color</option><option value="completion">Completion today</option></select></label>
+          <label><input id="show-archived" type="checkbox"> Show archived</label>
+          <label><input id="hide-completed" type="checkbox"> Hide completed</label>
+          <label>Go to date<input id="jump-date" type="date"></label>
+        </div>
+        <div id="selection" class="actions" hidden>
+          <span id="selection-count"></span>
+          <button id="bulk-archive">Archive</button><button id="bulk-restore">Unarchive</button>
+          <button id="bulk-category">Set category</button><button id="bulk-color">Set color</button>
+          <button id="bulk-delete" class="danger">Delete</button><button id="clear-selection">Clear selection</button>
+        </div>
+      <p class="intro">Build your rhythm. Track what matters.</p>
+      <p id="status" role="status" aria-live="polite"></p>
+      <section class="tracker" aria-label="Habit tracker">
+        <div class="toolbar">
+          <div>
+            <h2>Your habits</h2>
+            <p id="summary"></p>
+          </div>
+          <nav aria-label="Date range">
+            <button id="previous" aria-label="Previous week">←</button>
+            <button id="today">Today</button>
+            <button id="next" aria-label="Next week">→</button>
+          </nav>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead id="head"></thead>
+            <tbody id="habits"></tbody>
+          </table>
+        </div>
+        <div id="empty" hidden>
+          <h3 id="empty-title">Make room for a new habit.</h3>
+          <p id="empty-message">Add a Boolean habit, a numeric habit, or a group.</p>
+          <button id="first" class="primary">Create your first habit</button>
+        </div>
+      </section>
+      <footer>
+        The local server saves your database. Export a backup before you replace or delete records.
+      </footer>
+    </main>
+    <input id="file" type="file" accept=".db,.sqlite,.sqlite3,application/octet-stream,application/vnd.sqlite3" hidden>
+    <dialog id="editor" aria-labelledby="editor-title">
+      <form id="habit-form">
+        <h2 id="editor-title">New habit</h2>
+        <label>Name<input name="name" required maxlength="120" autocomplete="off"></label>
+        <label>Type<select name="type">
+            <option value="boolean">Boolean · yes or no</option>
+            <option value="number">Numeric · a daily amount</option>
+            <option value="group">Group · any child activity</option>
+          </select></label>
+        <div id="numeric-fields" class="fields" hidden>
+          <label>Target<input
+              name="target"
+              type="number"
+              min="0.000001"
+              step="any"
+              value="1"
+              required
+            ></label>
+          <label>Unit<input name="unit" maxlength="40" placeholder="e.g. km, pages"></label>
+          <label>Target type<select name="targetType"><option value="0">At least</option><option value="1">At most</option></select></label>
+        </div>
+        <label>Question<input name="question" autocomplete="off"></label>
+        <label>Habit notes<textarea name="description" rows="3"></textarea></label>
+        <label>Category<input name="category" list="categories" autocomplete="off"></label>
+        <datalist id="categories"></datalist>
+        <div id="schedule-fields">
+          <div class="fields">
+            <label>Repetitions<input name="frequencyNumerator" type="number" min="1" max="365" value="1" required></label>
+            <label>In this many days<input name="frequencyDenominator" type="number" min="1" max="365" value="1" required></label>
+          </div>
+          <p class="hint">Numeric periods: 1 day, 7 days, or 30 days, as in Android.</p>
+          <label>Reminder time<input name="reminderTime" type="time"></label>
+          <fieldset id="reminder-days"><legend>Reminder days</legend></fieldset>
+          <p class="hint">Enable browser reminders in Settings for delivery after you close this page.</p>
+        </div>
+        <label id="children-field" hidden>Child habits<select id="group-children" multiple size="5"></select></label>
+        <label id="parent-field">Group<select name="parentId">
+            <option value="">No group</option>
+          </select></label>
+        <label>Color<input name="color" type="color" value="#6750a4"></label>
+        <label><input name="archived" type="checkbox"> Archived</label>
+        <div class="dialog-actions">
+          <button id="delete" type="button" class="danger" hidden>Delete habit</button>
+          <button type="button" data-close>Cancel</button>
+          <button class="primary">Save habit</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="settings" aria-labelledby="settings-title">
+      <h2 id="settings-title">Settings</h2>
+      <button id="enable-reminders" type="button">Enable browser reminders</button>
+      <button id="disable-reminders" type="button">Disable browser reminders</button>
+      <p>Reminders use your browser's push service. Keep the local server running. Notification clicks open Loop.</p>
+      <label>Theme<select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option><option value="black">Pure black</option></select></label>
+      <label><input id="quick-toggle" type="checkbox"> Toggle with short press</label>
+      <label><input id="show-unknown" type="checkbox" checked> Show question marks for unknown days</label>
+      <label><input id="allow-skip" type="checkbox" checked> Allow skipped days</label>
+      <label><input id="reverse-dates" type="checkbox"> Show newest date first</label>
+      <label>First weekday<select id="first-weekday"><option value="1">Sunday</option><option value="2">Monday</option><option value="3">Tuesday</option><option value="4">Wednesday</option><option value="5">Thursday</option><option value="6">Friday</option><option value="7">Saturday</option></select></label>
+      <p>Loop Web edits Android Loop backups on this computer.</p>
+      <p><a href="https://loophabits.org/faq/" target="_blank" rel="noreferrer">Help &amp; FAQ</a> · <a href="https://github.com/iSoron/uhabits" target="_blank" rel="noreferrer">About Loop and contributors</a></p>
+      <button type="button" data-close>Close</button>
+    </dialog>
+    <dialog id="details" aria-labelledby="details-title">
+      <h2 id="details-title"></h2>
+      <p id="details-question"></p>
+      <p id="details-target"></p>
+      <section id="overview-section"><h3>Overview</h3><p id="details-overview"></p></section>
+      <section id="target-section" hidden><h3>Targets</h3><div id="target-list"></div></section>
+      <label>Charts through<input id="chart-until" type="date"></label>
+      <section><h3>Habit strength</h3>
+        <label>Period<select id="score-period"><option value="0">Day</option><option value="1">Week</option><option value="2">Month</option><option value="3">Quarter</option><option value="4">Year</option></select></label>
+        <div id="strength-chart"></div>
+      </section>
+      <section><h3>Best streaks</h3><ol id="streak-list"></ol></section>
+      <section><h3>Frequency</h3><label>Month<select id="frequency-month"></select></label><div id="frequency-chart"></div></section>
+      <section><h3>Totals</h3>
+        <label>Period<select id="total-period"><option value="0">Day</option><option value="1">Week</option><option value="2">Month</option><option value="3">Quarter</option><option value="4">Year</option></select></label>
+        <div id="totals-chart"></div>
+      </section>
+      <h3>Habit notes</h3><p id="details-notes" class="preserve-lines"></p>
+      <h3>History</h3>
+      <label>Month<input id="history-month" type="month"></label>
+      <div id="history" class="history-grid"></div>
+      <p class="hint">Select a date to edit its result and notes.</p>
+      <div class="dialog-actions"><button id="details-edit">Edit</button><button id="details-archive">Archive</button><button id="details-export">Export CSV</button><button type="button" data-close>Close</button></div>
+    </dialog>
+    <dialog id="entry" aria-labelledby="entry-title">
+      <form id="entry-form">
+        <h2 id="entry-title"></h2>
+        <p id="entry-date" class="hint"></p>
+        <div id="entry-fields"></div>
+        <p id="entry-hint" class="hint"></p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Cancel</button>
+          <button id="save-entries" class="primary">Save entries</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
