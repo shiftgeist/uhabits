@@ -1,6 +1,7 @@
 [tools]
 android-sdk = "23.0"
 java = "temurin-17.0.21+9"
+node = "26"
 
 [tasks.android-setup]
 description = "Install the Android SDK packages required for the build"
@@ -10,3 +11,7 @@ run = 'android --sdk="$(mise where android-sdk)" sdk install platforms/android-3
 [tasks.build]
 description = "Build the debug APK"
 run = "bash ./gradlew :uhabits-android:assembleDebug && echo 'uhabits-android/build/outputs/apk/debug/uhabits-android-debug.apk'"
+
+[tasks.web]
+description = "Run the web app server"
+run = "node --no-warnings web/server.ts"
