@@ -1,4 +1,4 @@
-import { coreHabits, validateState } from './model.ts'
+import { validateState } from './model.ts'
 import type { State } from './model.ts'
 import { core } from './core.ts'
 
@@ -18,5 +18,5 @@ export function calculateMetrics(state: State, today: string, firstWeekday = 1, 
   if (!Number.isInteger(firstWeekday) || firstWeekday < 1 || firstWeekday > 7) throw new Error('Invalid first weekday.')
   if (![scoreBucket, totalBucket].every(bucket => Number.isInteger(bucket) && bucket >= 0 && bucket < 5)) throw new Error('Invalid chart period.')
   return JSON.parse(core.calculateWebMetrics(JSON.stringify({ today, firstWeekday, scoreBucket, totalBucket,
-    booleanTotalBucket: Math.max(0, totalBucket - 1), habits: coreHabits(state) }))) as Record<string, HabitMetrics>
+    booleanTotalBucket: Math.max(0, totalBucket - 1), state }))) as Record<string, HabitMetrics>
 }

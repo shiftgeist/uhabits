@@ -3,6 +3,7 @@ import type { AndroidFields, State } from './model.ts'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { sql } from 'drizzle-orm'
+import { core } from './core.ts'
 
 export type SqlValue = string | number | null | Uint8Array
 export class ServerSQLite {
@@ -30,20 +31,8 @@ export class ServerSQLite {
   close() { this.native.close(); }
 }
 
-const palette = [
-  '#d32f2f', '#e64a19', '#f57c00', '#ff8f00', '#f9a825', '#afb42b', '#7cb342',
-  '#388e3c', '#00897b', '#00acc1', '#039be5', '#1976d2', '#303f9f', '#5e35b1',
-  '#8e24aa', '#d81b60', '#5d4037', '#424242', '#757575', '#9e9e9e'
-]
 const types = ['boolean', 'number', 'group'] as const
 const millisecondsPerDay = 86_400_000
-
-function nearestColor(color: string): number {
-  const rgb = (value: string) => [1, 3, 5].map(start => parseInt(value.slice(start, start + 2), 16))
-  const actual = rgb(color)
-  const distance = (value: string) => rgb(value).reduce((sum, channel, index) => sum + (channel - actual[index]) ** 2, 0)
-  return palette.reduce((best, value, index) => distance(value) < distance(palette[best]) ? index : best, 0)
-}
 
 export class LoopDatabase {
   private db: ServerSQLite
@@ -107,7 +96,7 @@ export class LoopDatabase {
         id: String(row.uuid || `legacy-${row.id}`), name: String(row.name), type,
         parentId: row.parent_uuid ? String(row.parent_uuid) : null,
         target: type === 'number' ? Number(row.target_value) : 1,
-        unit: String(row.unit ?? ''), color: palette[Number(row.color)] ?? palette[0], entries, notes, skippedDays, unknownDays,
+        unit: String(row.unit ?? ''), color: core.webPaletteColor(Number(row.color)), entries, notes, skippedDays, unknownDays,
         android: { habit: row, entries: records.filter(entry => entry.habit === row.id).map(entry => ({
           timestamp: Number(entry.timestamp), value: Number(entry.value), notes: String(entry.notes ?? '')
         })) }
@@ -139,7 +128,7 @@ export class LoopDatabase {
           if (old.type !== habit.type) throw new Error('You cannot change an existing habit’s type.')
           const updates: Record<string, SqlValue> = { name: habit.name, unit: habit.unit, position }
           if (columns.includes('parent_uuid')) updates.parent_uuid = habit.parentId
-          if (old.color !== habit.color) updates.color = nearestColor(habit.color)
+          if (old.color !== habit.color) updates.color = core.webNearestColorIndex(habit.color)
           if (habit.type === 'number') updates.target_value = habit.target
           if (habit.settings) {
             const s = habit.settings
@@ -168,7 +157,7 @@ export class LoopDatabase {
           id = Number(this.rows('SELECT COALESCE(MAX(id),0)+1 AS id FROM Habits')[0].id)
           const row: Record<string, SqlValue> = {
             id, position, uuid: habit.id, name: habit.name, type: types.indexOf(habit.type),
-            parent_uuid: habit.parentId, unit: habit.unit, archived: 0, color: nearestColor(habit.color),
+            parent_uuid: habit.parentId, unit: habit.unit, archived: 0, color: core.webNearestColorIndex(habit.color),
             description: '', question: '', freq_num: 1, freq_den: 1, reminder_hour: null,
             reminder_min: null, reminder_days: 0, highlight: 0, target_type: 0,
             target_value: habit.type === 'number' ? habit.target : 0, category: ''

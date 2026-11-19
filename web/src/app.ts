@@ -131,7 +131,7 @@ function render() {
   const habits = filterHabits(state, { day: today, search: $<HTMLInputElement>('#search').value,
     category: $<HTMLSelectElement>('#category').value, showArchived: $<HTMLInputElement>('#show-archived').checked,
     hideCompleted: $<HTMLInputElement>('#hide-completed').checked,
-    sort: $<HTMLSelectElement>('#sort').value as 'manual' | 'name' | 'color' | 'completion' }, isComplete)
+    sort: $<HTMLSelectElement>('#sort').value as 'manual' | 'name' | 'color' | 'completion' })
   selectAll.checked = habits.length > 0 && habits.every(h => selected.has(h.id))
   selectAll.addEventListener('change', () => { for (const h of habits) selectAll.checked ? selected.add(h.id) : selected.delete(h.id); render(); })
   selectionHead.append(selectAll)

@@ -25,7 +25,7 @@ fun calculateWebMetrics(input: String): String {
   setToday(webDate(data.today as String))
   setFirstWeekday(DayOfWeek.entries[firstWeekday - 1])
   try {
-    val habits = readWebHabits(data.habits)
+    val habits = readWebHabits(data.state.habits)
     val output = js("Object.create(null)")
     val theme = LightTheme()
     for (habit in habits) {

@@ -6,4 +6,7 @@ export const core = await import(moduleURL) as {
   calculateWebMetrics(input: string): string
   queryWebHabits(input: string): string
   mutateWebHabits(input: string): string
+  calculateWebHabitDate(timestamp: number, extended: boolean): string
+  webNearestColorIndex(hex: string): number
+  webPaletteColor(index: number): string
 }

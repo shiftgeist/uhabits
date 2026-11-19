@@ -198,3 +198,32 @@ test('activity follows core group rules for archived children and skipped record
   assert.equal(activity(state, 'group', day), 0)
   assert.equal(activity(state, 'zebra', day), 0)
 })
+
+test('list order uses core category and name order', () => {
+  const state = { ...emptyState(), habits: [
+    habit('z', 'boolean', { settings: { ...settingsOf(), category: 'Work' } }),
+    habit('b'), habit('a')
+  ] }
+  assert.deepEqual(filterHabits(state, { day, sort: 'name' }).map(h => h.id), ['a', 'b', 'z'])
+  assert.deepEqual(filterHabits(state, { day, sort: 'manual' }).map(h => h.id), ['b', 'a', 'z'])
+})
+
+test('core reorder retains unrelated rows, metadata, and the original state', () => {
+  const state = fixture()
+  state.habits.push(habit('last'))
+  state.revision = 'retained'
+  const snapshot = structuredClone(state)
+  const next = moveHabit(state, 'last', -1)
+  assert.deepEqual(next.habits.map(h => h.id), ['group', 'zebra', 'Alpha', 'last', 'other'])
+  assert.equal(next.revision, 'retained')
+  assert.deepEqual(state, snapshot)
+  assert.deepEqual(moveHabit(state, 'missing', 1), state)
+})
+
+test('core color order uses palette positions rather than hex strings', () => {
+  const state = { ...emptyState(), habits: [
+    habit('blue', 'boolean', { color: '#1976d2' }),
+    habit('red', 'boolean', { color: '#d32f2f' })
+  ] }
+  assert.deepEqual(filterHabits(state, { day, sort: 'color' }).map(h => h.id), ['red', 'blue'])
+})

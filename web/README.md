@@ -122,13 +122,15 @@ Web reuses the Kotlin core to avoid separate habit rules for Android and the bro
 Web-specific Kotlin adapters use separate files to reduce conflicts when we merge upstream updates.
 See [the core bridge](../uhabits-core/src/jsMain/kotlin/WebHabits.kt) for shared commands and queries.
 See [the metrics bridge](../uhabits-core/src/jsMain/kotlin/WebMetrics.kt) for progress calculations.
-The TypeScript adapters preserve web state and Android metadata across these calls.
+The Kotlin bridge preserves web state and Android metadata across these calls.
 Web keeps its spreadsheet CSV format because Android exports a different ZIP archive.
 
 ### Reuse policy
 
 Keep Kotlin responsible for behavior rather than recreate the core in TypeScript.
 Maximize reuse from the original core and Android code.
+Do not modify upstream core or Android files for the web app.
+Keep web adaptations in separate adapter files.
 This goal includes file operations, imports, exports, date rules, time calculations, and utilities.
 Reuse existing implementations before adding web equivalents.
 
@@ -136,14 +138,21 @@ Keep TypeScript responsible for the web interface and platform adapters.
 Adapters connect web capabilities to Kotlin behavior; they must not duplicate domain rules.
 Expose more Kotlin operations through a bridge when the current bridge lacks an operation.
 Adapt only platform boundaries when an existing implementation requires browser, JVM, or Android APIs.
-Move reusable Kotlin behavior into the shared core when Android dependencies prevent direct reuse.
+Call reusable Kotlin behavior through adapters when platform dependencies permit reuse.
 Keep Android-specific behavior on Android when it requires Android services.
 
 This policy defines the reuse goal, not the current coverage.
-Use Bun alone only if Kotlin/JS can provide the entire core that the web app needs.
-Otherwise, use Bun with a Kotlin/JVM process through a small bridge.
-Prefer JVM reuse over a TypeScript replacement for missing Kotlin/JS behavior.
+Use the Kotlin/JS bridge from the browser and Node.
+The bridge does not require Bun or a JVM process.
+Keep JVM-dependent behavior outside the JS bridge until an adapter can reuse it without upstream changes.
+Provide platform adapters for capabilities that require Node or browser APIs.
 Neither runtime can directly execute code that requires Android services.
+
+See [the state adapter](../uhabits-core/src/jsMain/kotlin/WebState.kt) for web records and the core palette.
+See [the date bridge](../uhabits-core/src/jsMain/kotlin/WebDates.kt) for the habit date.
+List views use the core order instead of locale-specific JavaScript comparisons.
+The Node adapter still owns SQLite access and Android database compatibility checks.
+The web CSV format remains a separate consumer format.
 
 These journeys still need work:
 

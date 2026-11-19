@@ -59,31 +59,13 @@ export function settingsOf(habit: Pick<Habit, 'settings' | 'android'> = {}): Hab
   }
 }
 
-export function coreHabits(state: State) {
-  return state.habits.map((habit, position) => {
-    const settings = settingsOf(habit)
-    const originals = new Map((habit.android?.entries ?? []).map(entry => [new Date(entry.timestamp).toISOString().slice(0, 10), entry.value]))
-    return {
-      id: habit.id, name: habit.name, type: habit.type, parentId: habit.parentId, target: habit.target,
-      unit: habit.unit, position, ...settings,
-      numerator: settings.frequencyNumerator, denominator: settings.frequencyDenominator,
-      records: Object.entries(habit.entries).map(([date, value]) => ({ date,
-        notes: habit.notes?.[date] ?? '',
-        value: !habit.editedDays?.includes(date) && originals.has(date) ? originals.get(date)
-          : habit.unknownDays?.includes(date) ? -1 : habit.skippedDays?.includes(date) ? 3
-            : habit.type === 'number' ? Math.round(value * 1000) : value ? 2 : 0
-      }))
-    }
-  })
-}
-
 function mutate(state: State, operation: string, extra: Record<string, unknown>): State {
-  return validateState(JSON.parse(core.mutateWebHabits(JSON.stringify({ state, habits: coreHabits(state), operation, ...extra }))))
+  return validateState(JSON.parse(core.mutateWebHabits(JSON.stringify({ state, operation, ...extra }))))
 }
 
 function query(state: State, day: string, filter?: HabitFilter) {
   requireValue(validDate(day), 'Invalid entry date.')
-  return JSON.parse(core.queryWebHabits(JSON.stringify({ habits: coreHabits(state), today: day, filter }))) as Record<string, {
+  return JSON.parse(core.queryWebHabits(JSON.stringify({ state, today: day, filter }))) as Record<string, {
     completed: boolean; matches: boolean
   }>
 }
@@ -187,7 +169,7 @@ export function saveHabit(state: State, habit: HabitDraft): State {
   validateState({ ...state, habits: existing
     ? state.habits.map(h => h.id === next.id ? next : h)
     : [...state.habits, next] })
-  return mutate(state, 'save', { draft: next, habit: coreHabits({ ...state, habits: [next] })[0] })
+  return mutate(state, 'save', { draft: next })
 }
 
 export function deleteHabit(state: State, id: string): State {
@@ -200,37 +182,12 @@ export function setEntry(state: State, id: string, day: string, value: number): 
 
 export function setRecord(state: State, id: string, day: string, value: number | 'skip' | null, note?: string): State {
   requireValue(validDate(day), 'Invalid entry date.')
-  const habit = state.habits.find(h => h.id === id)
-  requireValue(habit && habit.type !== 'group', 'Enter data on a child habit, not its group.')
-  const entries = { ...habit.entries }
-  const notes = { ...habit.notes }
-  const skippedDays = (habit.skippedDays ?? []).filter(d => d !== day)
-  const unknownDays = (habit.unknownDays ?? []).filter(d => d !== day)
-  if (value === null) {
-    delete entries[day]; delete notes[day]
-    if (note) { entries[day] = 0; notes[day] = note; unknownDays.push(day); }
-  }
-  else {
-    entries[day] = value === 'skip' ? 0 : value
-    if (value === 'skip') skippedDays.push(day)
-    if (note !== undefined) notes[day] = note
-  }
-  const next = validateState({ ...state, habits: state.habits.map(h => h.id === id ? {
-    ...h, entries, notes, skippedDays, unknownDays, editedDays: [...new Set([...(h.editedDays ?? []), day])]
-  } : h) })
-  return mutate(state, 'record', { id, day, next, record: coreHabits(next).find(h => h.id === id)!.records.find(r => r.date === day)
-    ?? { date: day, value: -1, notes: '' } })
+  requireValue(typeof value !== 'number' || Number.isFinite(value), 'Invalid entry value.')
+  return mutate(state, 'record', { id, day, value, note })
 }
 
 export function moveHabit(state: State, id: string, direction: -1 | 1): State {
-  const habits = [...state.habits]
-  const index = habits.findIndex(h => h.id === id)
-  if (index < 0) return state
-  const siblings = habits.map((h, position) => ({ h, position })).filter(({ h }) => h.parentId === habits[index].parentId)
-  const position = siblings.findIndex(item => item.position === index)
-  const next = siblings[position + direction]?.position
-  if (next !== undefined) [habits[index], habits[next]] = [habits[next], habits[index]]
-  return { ...state, habits }
+  return mutate(state, 'move', { id, direction })
 }
 
 export interface HabitFilter {
@@ -242,19 +199,14 @@ export interface HabitFilter {
   sort?: 'manual' | 'name' | 'color' | 'completion'
 }
 
-export function filterHabits(state: State, filter: HabitFilter, isComplete?: (id: string, day: string) => boolean): Habit[] {
-  const results = query(state, filter.day, filter)
-  const complete = isComplete ?? ((id: string) => results[id]?.completed ?? false)
-  const habits = visibleHabits(state).filter(h => results[h.id]?.matches && (!filter.hideCompleted || !complete(h.id, filter.day)))
-  if (filter.sort === 'name') habits.sort((a, b) => a.name.localeCompare(b.name))
-  if (filter.sort === 'color') habits.sort((a, b) => a.color.localeCompare(b.color))
-  if (filter.sort === 'completion') habits.sort((a, b) => Number(complete(b.id, filter.day)) - Number(complete(a.id, filter.day)))
-  return habits
+export function filterHabits(state: State, filter: HabitFilter): Habit[] {
+  requireValue(validDate(filter.day), 'Invalid entry date.')
+  return listHabits(state, filter)
 }
 
 export function activity(state: State, id: string, day: string): number {
   requireValue(validDate(day), 'Invalid entry date.')
-  return JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'activity', habits: coreHabits(state), today: day, id }))) as number
+  return JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'activity', state, today: day, id }))) as number
 }
 
 export function completed(state: State, id: string, day: string): boolean {
@@ -269,14 +221,17 @@ export function toggleGroup(state: State, id: string): State {
 }
 
 export function children(state: State, id: string): Habit[] {
-  const ids = JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'children', habits: coreHabits(state), id }))) as string[]
+  const ids = JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'children', state, id }))) as string[]
   const habits = new Map(state.habits.map(habit => [habit.id, habit]))
   return ids.map(id => habits.get(id)!)
 }
 
 export function visibleHabits(state: State): Habit[] {
-  return state.habits.filter(h => h.parentId === null).flatMap(
-    h => [h,
-      ...(h.type === 'group' && !state.collapsedIds.includes(h.id) ? children(state, h.id) : [])]
-  )
+  return listHabits(state)
+}
+
+function listHabits(state: State, filter?: HabitFilter): Habit[] {
+  const ids = JSON.parse(core.queryWebHabits(JSON.stringify({ operation: 'list', state, today: filter?.day, filter }))) as string[]
+  const habits = new Map(state.habits.map(habit => [habit.id, habit]))
+  return ids.map(id => habits.get(id)!)
 }
